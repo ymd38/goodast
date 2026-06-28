@@ -1,0 +1,59 @@
+/* Design tokens — source of truth: /DESIGN.md */
+/* AI rules: /.claude/rules/design-tokens.md */
+:root {
+  /* Colors — Surface */
+  --color-canvas:           #000000;
+  --color-surface-soft:     #0d0d0d;
+  --color-surface-card:     #1a1a1a;
+  --color-surface-elevated: #262626;
+  --color-carbon-gray:      #2b2b2b;
+
+  /* Colors — Text */
+  --color-on-dark:          #ffffff;
+  --color-body-strong:      #e6e6e6;
+  --color-body:             #bbbbbb;
+  --color-muted:            #7e7e7e;
+
+  /* Colors — Hairline */
+  --color-hairline:         #3c3c3c;
+  --color-hairline-strong:  #262626;
+
+  /* Colors — Brand / M Tricolor */
+  --color-m-blue-light:     #0066b1;
+  --color-m-blue-dark:      #1c69d4;
+  --color-m-red:            #e22718;
+  --color-electric-blue:    #0653b6;
+
+  /* Colors — Semantic */
+  --color-warning:          #f4b400;
+  --color-success:          #0fa336;
+
+  /* Spacing */
+  --spacing-xxs:     4px;
+  --spacing-xs:      8px;
+  --spacing-sm:      12px;
+  --spacing-md:      16px;
+  --spacing-lg:      24px;
+  --spacing-xl:      40px;
+  --spacing-xxl:     64px;
+  --spacing-section: 96px;
+
+  /* Border Radius */
+  --rounded-none: 0px;
+  --rounded-xs:   2px;
+  --rounded-sm:   4px;
+  --rounded-md:   6px;
+  --rounded-full: 9999px;
+
+  /* Typography */
+  --font-display: 'BMWTypeNextLatin', 'Inter', sans-serif;
+  --font-body:    'BMWTypeNextLatin Light', 'BMWTypeNextLatin', 'Inter', sans-serif;
+
+  /* M Tricolor gradient (brand divider only) */
+  --gradient-m-stripe: linear-gradient(
+    to right,
+    var(--color-m-blue-light),
+    var(--color-m-blue-dark),
+    var(--color-m-red)
+  );
+}

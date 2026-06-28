@@ -1,0 +1,39 @@
+# === Go ===
+# ビルド成果物（バイナリ）
+/api/api
+/worker/worker
+*.exe
+*.test
+*.out
+coverage.*
+cov.out
+
+# Go ワークスペースのローカル上書き（go.work / go.work.sum は意図的にコミットする）
+go.work.local
+
+# === Node / Nuxt (web/) ===
+node_modules/
+web/.nuxt/
+web/.output/
+web/.data/
+web/dist/
+*.log
+
+# === 環境変数・秘密情報（絶対にコミットしない） ===
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# === Nuclei テンプレート（ADR: リポジトリに含めない・起動時取得） ===
+/nuclei-templates/
+
+# === Claude Code（ローカル個人設定はコミットしない） ===
+.claude/settings.local.json
+
+# === エディタ / OS ===
+.DS_Store
+.idea/
+.vscode/
+*.swp

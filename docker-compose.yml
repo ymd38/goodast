@@ -1,0 +1,41 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: goodast
+      POSTGRES_USER: goodast
+      POSTGRES_PASSWORD: goodast
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+
+  api:
+    build: ./api
+    depends_on: [db]
+    environment:
+      DATABASE_URL: postgres://goodast:goodast@db:5432/goodast
+    ports:
+      - "8080:8080"
+
+  worker:
+    build: ./worker
+    depends_on: [db]
+    environment:
+      DATABASE_URL: postgres://goodast:goodast@db:5432/goodast
+
+  web:
+    build: ./web
+    depends_on: [api]
+    ports:
+      - "3000:3000"
+
+  # 検証用: make juiceshop-up で起動
+  juiceshop:
+    image: bkimminich/juice-shop
+    ports:
+      - "3001:3000"
+    profiles: [juiceshop]
+
+volumes:
+  db_data:
