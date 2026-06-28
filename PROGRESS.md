@@ -11,10 +11,10 @@
 ## 現在地スナップショット
 
 - フェーズ: **PoC Phase 1**
-- 作業ブランチ: `feat/0001-api-worker-separation`
-- PR: **#1 OPEN** → base `main`（https://github.com/ymd38/goodast/pull/1）
-- CI: レビュー対応コミット push 済み → 再実行結果待ち
-- レビュー: PR #1 の全指摘（Q1〜Q5 / A1）対応済み
+- 作業ブランチ: `db/initial-schema`
+- PR #1（ADR-0001 + CI）: **マージ済み**
+- 進行中: 初期DBスキーマ + sqlc セットアップ
+- sqlc バージョン: **v1.31.1**（再生成時はこのバージョンを使う）
 - リモート: `ymd38/goodast`（**private**）
 - ブランチ戦略: 2-tier（feature → main、PR経由）
 - レビュー: **PR Agent（OpenAI）** に一本化
@@ -30,8 +30,11 @@
 - [x] GitHub Actions（CI matrix / security-scan / PR Agent）
 - [ ] Makefile（`make dev-api` 等の想定ターゲット）
 
-### 実装（未着手・順不同の候補）
-- [ ] DBスキーマ: `migrations/` + sqlc セットアップ（企画書 §5）
+### 実装
+- [x] DBスキーマ: `migrations/000001_initial_schema` + sqlc セットアップ（企画書 §5）
+  - 4テーブル（sites / scan_credentials / scans / findings）、text+CHECK、FK CASCADE
+  - api/worker 両モジュールに sqlc.yaml + 生成コード（`internal/db/`）+ 最小クエリ
+  - throwaway PG で migrate up/down 検証済み
 - [ ] ADR-0005 river ジョブキュー（api enqueue ↔ worker dequeue）
 - [ ] ADR-0002 Nuclei SDK 統合（`worker/internal/engine/`）
 - [ ] ADR-0004 ドメイン所有確認（ファイル設置 / DNS TXT）
@@ -64,13 +67,29 @@
 > **全レビュー指摘に対応済み**（Q1〜Q5 / A1）。Q4 は当面 `continue-on-error: true` で
 > PR をブロックしない「段階ゲート」。本ゲート化する際は `continue-on-error` を外す。
 
+### PR #2（DBスキーマ）レビュー backlog
+
+| ID | 指摘 | 対応 |
+|---|---|---|
+| R1 | scan の不正状態遷移が可能 | ✅ クエリに状態ガード（`AND status=...`）追加。不正遷移は0行→`ErrNoRows` |
+| R2 | sqlc が down マイグレーションを読み得る | ✅ schema を `../migrations/*.up.sql` に限定 |
+| R3 | `auth_mode='session'` で `enc_headers` NULL 可 | ✅ CHECK制約で session→NOT NULL / none→NULL を強制 |
+
+> throwaway PG で CHECK制約・状態遷移ガードの動作を検証済み。
+
 ---
 
 ## 直近のアクション（resume ポイント）
 
-1. **CI #1 の結果確認** — レビュー対応 push 後の再実行を確認（緑なら次へ／赤なら原因対応）
-2. PR #1 レビュー再確認 → 問題なければマージ
-3. PR #1 マージ後、**DBスキーマ** または **ADR-0005 river** に着手
+1. `db/initial-schema` の PR 作成 → CI / PR Agent 確認 → マージ
+2. マージ後、**ADR-0005 river**（api enqueue ↔ worker dequeue）に着手
+3. その後、サイト登録 API（site feature）→ スキャン受付（scan feature）
+
+## メモ（運用）
+
+- マイグレーション適用: `migrate -path migrations -database "$DATABASE_URL" up`
+- sqlc 再生成: 各モジュールで `sqlc generate`（v1.31.1）。マイグレーション変更後は必須
+- Makefile（`make migrate` / `make sqlc` 等）は未整備（TODO）
 
 ---
 
