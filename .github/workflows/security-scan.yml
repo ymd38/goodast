@@ -1,0 +1,90 @@
+name: Security Scan
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  gitleaks:
+    name: Secret Scan (Gitleaks)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Gitleaks
+        run: |
+          curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz \
+            | tar -xz gitleaks
+          sudo install gitleaks /usr/local/bin/gitleaks
+
+      - name: Detect secrets
+        run: gitleaks detect --source . --log-opts="--all" --config .gitleaks.toml --verbose
+
+  trivy-fs:
+    name: Dependency Scan (Trivy)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Trivy FS scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          trivyignores: .trivyignore
+          format: table
+          exit-code: '0'
+
+  semgrep:
+    name: SAST (Semgrep)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    continue-on-error: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Semgrep
+        run: pip install semgrep==1.162.0
+
+      - name: Run Semgrep
+        run: |
+          semgrep \
+            --config p/security-audit \
+            --config p/owasp-top-ten \
+            --config p/golang \
+            --config p/typescript \
+            .
+
+  # web/ がスキャフォールドされたら（package.json + pnpm-lock.yaml 追加後）に有効化する。
+  # pnpm-audit:
+  #   name: Frontend Dependency Audit (pnpm)
+  #   runs-on: ubuntu-latest
+  #   defaults:
+  #     run:
+  #       working-directory: web
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: pnpm/action-setup@v4
+  #       with:
+  #         version: 10
+  #     - uses: actions/setup-node@v4
+  #       with:
+  #         node-version: '22'
+  #         cache: pnpm
+  #         cache-dependency-path: web/pnpm-lock.yaml
+  #     - name: Install dependencies
+  #       run: pnpm install --frozen-lockfile
+  #     - name: Frontend dependency audit
+  #       # --prod: devDependencies は本番に含まれないため対象外
+  #       run: pnpm audit --prod --audit-level=high

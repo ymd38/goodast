@@ -1,0 +1,13 @@
+title = "Gitleaks configuration for goodast"
+
+# gitleaks のデフォルトルールを継承する
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Known false positives and development artifacts"
+
+paths = [
+  # ローカル開発用の固定クレデンシャル（本番では使用しない）。
+  '''docker-compose\.yml''',
+]

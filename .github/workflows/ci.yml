@@ -1,0 +1,129 @@
+name: CI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main]
+    paths:
+      - '**/*.go'
+      - 'api/go.mod'
+      - 'api/go.sum'
+      - 'worker/go.mod'
+      - 'worker/go.sum'
+      - 'go.work'
+      - 'go.work.sum'
+      - 'web/**'
+      - '.github/workflows/ci.yml'
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+
+jobs:
+  # api / worker は別 Go モジュール（ADR-0001）。matrix で個別に検証する。
+  backend:
+    name: Backend (${{ matrix.module }})
+    runs-on: ubuntu-latest
+    if: github.event_name != 'issue_comment'
+    strategy:
+      fail-fast: false
+      matrix:
+        module: [api, worker]
+    defaults:
+      run:
+        working-directory: ${{ matrix.module }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: ${{ matrix.module }}/go.mod
+          cache-dependency-path: ${{ matrix.module }}/go.sum
+
+      - name: go mod tidy check
+        run: |
+          go mod tidy
+          git diff --exit-code go.mod go.sum
+
+      - name: Build
+        run: go build ./...
+
+      - name: Test (race + coverage)
+        run: go test ./... -race -covermode=atomic
+
+      - name: Lint
+        run: |
+          go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+          golangci-lint run --timeout=5m
+
+  # web/ がスキャフォールドされたら（package.json + pnpm-lock.yaml 追加後）に有効化する。
+  # frontend:
+  #   name: Frontend (Nuxt)
+  #   runs-on: ubuntu-latest
+  #   if: github.event_name != 'issue_comment'
+  #   defaults:
+  #     run:
+  #       working-directory: web
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: pnpm/action-setup@v4
+  #       with:
+  #         version: 10
+  #     - uses: actions/setup-node@v4
+  #       with:
+  #         node-version: '22'
+  #         cache: pnpm
+  #         cache-dependency-path: web/pnpm-lock.yaml
+  #     - name: Install dependencies
+  #       run: pnpm install --frozen-lockfile
+  #     - name: Dependency audit
+  #       run: pnpm audit --audit-level=high
+  #     - name: Prepare Nuxt
+  #       run: pnpm exec nuxt prepare
+  #     - name: Lint
+  #       run: pnpm lint
+  #     - name: Type check
+  #       run: pnpm type-check
+  #     - name: Test
+  #       run: pnpm test --run
+
+  pr-agent:
+    name: PR Agent
+    runs-on: ubuntu-latest
+    needs: [backend]
+    # 同一リポジトリ発の main 向け PR でのみ実行（fork からは secrets を渡さない）。
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+
+    steps:
+      - name: Run PR Agent
+        uses: The-PR-Agent/pr-agent@bd09b6cf89c6d6f3d16b159fa7603fa0e7768cf2 # v0.38.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OPENAI_KEY: ${{ secrets.OPENAI_KEY }}
+          config.model: openai/gpt-5-codex
+
+  pr-agent-slash-command:
+    name: PR Agent (Slash Command)
+    runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'issue_comment' &&
+      github.event.issue.pull_request != null &&
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+
+    steps:
+      - name: Run PR Agent (Slash Command)
+        uses: The-PR-Agent/pr-agent@bd09b6cf89c6d6f3d16b159fa7603fa0e7768cf2 # v0.38.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OPENAI_KEY: ${{ secrets.OPENAI_KEY }}
+          config.model: openai/gpt-5-codex
