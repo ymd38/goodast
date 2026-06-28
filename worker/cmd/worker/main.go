@@ -101,7 +101,15 @@ func newHealthServer(d healthDeps) *http.Server {
 		writeJSON(w, http.StatusOK, `{"status":"ready"}`)
 	})
 
-	return &http.Server{Addr: d.Config.HealthAddr, Handler: mux}
+	// プローブ専用だが、保守的なタイムアウトで slow-client によるリソース枯渇を防ぐ。
+	return &http.Server{
+		Addr:              d.Config.HealthAddr,
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      10 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
 }
 
 func writeJSON(w http.ResponseWriter, status int, body string) {

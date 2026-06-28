@@ -13,7 +13,8 @@
 - フェーズ: **PoC Phase 1**
 - 作業ブランチ: `feat/0001-api-worker-separation`
 - PR: **#1 OPEN** → base `main`（https://github.com/ymd38/goodast/pull/1）
-- CI: 実行中（結果待ち）
+- CI: レビュー対応コミット push 済み → 再実行結果待ち
+- レビュー: PR #1 の全指摘（Q1〜Q5 / A1）対応済み
 - リモート: `ymd38/goodast`（**private**）
 - ブランチ戦略: 2-tier（feature → main、PR経由）
 - レビュー: **PR Agent（OpenAI）** に一本化
@@ -55,24 +56,20 @@
 |---|---|---|---|
 | Q1 | golangci-lint を `@latest` で未ピン | Reliability | ✅ 修正済 (3c61ee7) |
 | Q2 | gitleaks allowlist で docker-compose 全体除外 | Security | ✅ 修正済 (3c61ee7) |
-| Q3 | gitleaks を `curl \| tar` で取得（整合性検証なし） | Security | 🔲 未対応 |
-| Q4 | Trivy `exit-code:'0'` でゲート機能なし | Security | 🔲 未対応（方針判断） |
-| Q5 | `http.Server` タイムアウト未設定（api/worker） | Reliability/Security | 🔲 未対応 |
+| Q3 | gitleaks を `curl \| tar` で取得（整合性検証なし） | Security | ✅ 修正済（SHA256検証を追加） |
+| Q4 | Trivy `exit-code:'0'` でゲート機能なし | Security | ✅ 修正済（`exit-code:'1'`+`continue-on-error`の段階ゲート） |
+| Q5 | `http.Server` タイムアウト未設定（api/worker） | Reliability/Security | ✅ 修正済（保守的タイムアウト追加） |
 | A1 | `go test -covermode` に `-coverprofile` 無し | - | ✅ 誤検知（検証済・動作OK） |
 
-### 未対応の対応方針
-1. **Q5 タイムアウト**: `api` newServer / `worker` newHealthServer に
-   `ReadHeaderTimeout=5s, ReadTimeout=10s, WriteTimeout=10s, IdleTimeout=60s` を追加。
-   slowloris 等のリソース枯渇対策。最優先（影響小・効果大）。
-2. **Q3 gitleaks**: 公式 `gitleaks/gitleaks-action` を SHA ピンで使う、または DL 後に SHA256 検証を挟む。
-3. **Q4 Trivy**: PoC 段階の方針判断。推奨は `continue-on-error: true` を明示して「現状は report、将来 enforcement」の意図を残す（または `exit-code:'1'` でゲート化）。
+> **全レビュー指摘に対応済み**（Q1〜Q5 / A1）。Q4 は当面 `continue-on-error: true` で
+> PR をブロックしない「段階ゲート」。本ゲート化する際は `continue-on-error` を外す。
 
 ---
 
 ## 直近のアクション（resume ポイント）
 
-1. **CI #1 の結果確認** — 緑なら次へ／赤なら原因対応
-2. レビュー backlog を同 PR ブランチで対応: **Q5 → Q3 → Q4** の順
+1. **CI #1 の結果確認** — レビュー対応 push 後の再実行を確認（緑なら次へ／赤なら原因対応）
+2. PR #1 レビュー再確認 → 問題なければマージ
 3. PR #1 マージ後、**DBスキーマ** または **ADR-0005 river** に着手
 
 ---

@@ -108,7 +108,17 @@ func newRouter(d routerDeps) *gin.Engine {
 }
 
 func newServer(cfg *config.Config, r *gin.Engine) *http.Server {
-	return &http.Server{Addr: cfg.Addr, Handler: r}
+	// 保守的なタイムアウトで slowloris 等によるコネクション保持・リソース枯渇を防ぐ。
+	// 将来 SSE でスキャン進捗を配信する場合は、そのハンドラ内で http.ResponseController
+	// により書き込み期限を個別に延長する。
+	return &http.Server{
+		Addr:              cfg.Addr,
+		Handler:           r,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      10 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
 }
 
 type serveDeps struct {
