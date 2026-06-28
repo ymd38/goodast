@@ -14,7 +14,7 @@ import (
 const completeScan = `-- name: CompleteScan :one
 UPDATE scans
 SET status = 'done', finished_at = now(), summary_json = $2
-WHERE id = $1
+WHERE id = $1 AND status = 'running'
 RETURNING id, site_id, status, engine_version, started_at, finished_at, summary_json, created_at
 `
 
@@ -42,7 +42,7 @@ func (q *Queries) CompleteScan(ctx context.Context, arg CompleteScanParams) (Sca
 const failScan = `-- name: FailScan :one
 UPDATE scans
 SET status = 'failed', finished_at = now()
-WHERE id = $1
+WHERE id = $1 AND status IN ('queued', 'running')
 RETURNING id, site_id, status, engine_version, started_at, finished_at, summary_json, created_at
 `
 
@@ -63,9 +63,10 @@ func (q *Queries) FailScan(ctx context.Context, id pgtype.UUID) (Scan, error) {
 }
 
 const startScan = `-- name: StartScan :one
+
 UPDATE scans
 SET status = 'running', started_at = now(), engine_version = $2
-WHERE id = $1
+WHERE id = $1 AND status = 'queued'
 RETURNING id, site_id, status, engine_version, started_at, finished_at, summary_json, created_at
 `
 
@@ -74,6 +75,9 @@ type StartScanParams struct {
 	EngineVersion pgtype.Text `json:"engine_version"`
 }
 
+// 状態遷移ガード: WHERE に現在の status を含め、queued→running→done/failed の
+// ライフサイクルのみを許可する。不正な遷移は 0 行更新となり :one では ErrNoRows を
+// 返すため、呼び出し側で「既に遷移済み／不正遷移」として扱える。
 func (q *Queries) StartScan(ctx context.Context, arg StartScanParams) (Scan, error) {
 	row := q.db.QueryRow(ctx, startScan, arg.ID, arg.EngineVersion)
 	var i Scan

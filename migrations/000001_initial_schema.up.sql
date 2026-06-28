@@ -18,7 +18,12 @@ CREATE TABLE scan_credentials (
     site_id     uuid NOT NULL REFERENCES sites (id) ON DELETE CASCADE,
     auth_mode   text NOT NULL DEFAULT 'none' CHECK (auth_mode IN ('none', 'session')),
     enc_headers bytea,
-    created_at  timestamptz NOT NULL DEFAULT now()
+    created_at  timestamptz NOT NULL DEFAULT now(),
+    -- session モードでは暗号化ヘッダ必須、none では NULL に強制する（ADR-0003 / 整合性）。
+    CONSTRAINT scan_credentials_session_headers CHECK (
+        (auth_mode = 'none' AND enc_headers IS NULL)
+        OR (auth_mode = 'session' AND enc_headers IS NOT NULL)
+    )
 );
 
 -- scans: 1回のスキャン = 時系列の1点。

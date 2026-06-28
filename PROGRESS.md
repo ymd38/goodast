@@ -67,6 +67,16 @@
 > **全レビュー指摘に対応済み**（Q1〜Q5 / A1）。Q4 は当面 `continue-on-error: true` で
 > PR をブロックしない「段階ゲート」。本ゲート化する際は `continue-on-error` を外す。
 
+### PR #2（DBスキーマ）レビュー backlog
+
+| ID | 指摘 | 対応 |
+|---|---|---|
+| R1 | scan の不正状態遷移が可能 | ✅ クエリに状態ガード（`AND status=...`）追加。不正遷移は0行→`ErrNoRows` |
+| R2 | sqlc が down マイグレーションを読み得る | ✅ schema を `../migrations/*.up.sql` に限定 |
+| R3 | `auth_mode='session'` で `enc_headers` NULL 可 | ✅ CHECK制約で session→NOT NULL / none→NULL を強制 |
+
+> throwaway PG で CHECK制約・状態遷移ガードの動作を検証済み。
+
 ---
 
 ## 直近のアクション（resume ポイント）
