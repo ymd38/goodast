@@ -62,6 +62,10 @@ make juiceshop-up       # Docker で Juice Shop 起動
 
 ## 作業ルール
 
+### セッション開始時（厳守）
+作業を始める前に **`PROGRESS.md` を読み、現在地・直近のアクション・レビュー backlog を把握する。**
+作業の区切り（コミット・PR・タスク完了時）には `PROGRESS.md` を最新化する。これによりセッションを跨いでも継続できる。
+
 ### Plan First（厳守）
 実装を始める前に、必ず以下の順序で進める。承認なしに実装へ進んではならない。
 
@@ -104,3 +108,4 @@ make juiceshop-up       # Docker で Juice Shop 起動
 - DBスキーマ: `migrations/` ＋ 企画書 §5
 - デザインシステム（色・タイポグラフィ・コンポーネント）: `DESIGN.md`
 - 意思決定ログ（軽量・会話起点）: `MEMORY.md`
+- 進行管理（現在地・次アクション・レビューbacklog）: `PROGRESS.md`
