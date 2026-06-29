@@ -11,9 +11,12 @@ import (
 )
 
 type Querier interface {
+	CreateScan(ctx context.Context, siteID pgtype.UUID) (Scan, error)
 	CreateSite(ctx context.Context, arg CreateSiteParams) (Site, error)
+	GetScan(ctx context.Context, id pgtype.UUID) (Scan, error)
 	GetSiteByID(ctx context.Context, id pgtype.UUID) (Site, error)
 	GetSiteByName(ctx context.Context, name string) (Site, error)
+	ListScansBySite(ctx context.Context, siteID pgtype.UUID) ([]Scan, error)
 	ListSites(ctx context.Context) ([]Site, error)
 	MarkSiteVerified(ctx context.Context, id pgtype.UUID) (Site, error)
 }

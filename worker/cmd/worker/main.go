@@ -1,5 +1,5 @@
 // Command worker は goodast のスキャンワーカープロセス（ADR-0001）。
-// Nuclei SDK は internal/engine/ にのみ置く。river によるジョブ消費は ADR-0005 で追加する。
+// Nuclei SDK は internal/engine/ にのみ置く。river でジョブを消費する（ADR-0005）。
 package main
 
 import (
@@ -13,10 +13,15 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/riverqueue/river"
+	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 	"go.uber.org/dig"
 
 	"github.com/ymd38/goodast/worker/internal/config"
+	"github.com/ymd38/goodast/worker/internal/db"
+	"github.com/ymd38/goodast/worker/internal/scanjob"
 )
 
 func main() {
@@ -41,6 +46,9 @@ func run() error {
 		func() *config.Config { return cfg },
 		func() *slog.Logger { return logger },
 		newPool,
+		func(pool *pgxpool.Pool) *db.Queries { return db.New(pool) },
+		scanjob.NewWorker,
+		newRiverClient,
 		newHealthServer,
 	}
 	for _, p := range providers {
@@ -72,6 +80,19 @@ func newPool(cfg *config.Config) (*pgxpool.Pool, error) {
 		return nil, fmt.Errorf("create connection pool: %w", err)
 	}
 	return pool, nil
+}
+
+// newRiverClient は scan ジョブを処理する river クライアントを生成する。
+func newRiverClient(pool *pgxpool.Pool, sw *scanjob.Worker, logger *slog.Logger) (*river.Client[pgx.Tx], error) {
+	workers := river.NewWorkers()
+	river.AddWorker(workers, sw)
+
+	// スキャンは高負荷なため同時実行数は保守的に抑える（ADR の保守的レート方針）。
+	return river.NewClient(riverpgxv5.New(pool), &river.Config{
+		Queues:  map[string]river.QueueConfig{river.QueueDefault: {MaxWorkers: 5}},
+		Workers: workers,
+		Logger:  logger,
+	})
 }
 
 type healthDeps struct {
@@ -121,16 +142,22 @@ func writeJSON(w http.ResponseWriter, status int, body string) {
 type serveDeps struct {
 	dig.In
 	Health *http.Server
+	River  *river.Client[pgx.Tx]
 	Pool   *pgxpool.Pool
 	Config *config.Config
 	Logger *slog.Logger
 }
 
-// serve はヘルスサーバを起動し、SIGINT/SIGTERM で graceful shutdown する。
+// serve は river クライアントとヘルスサーバを起動し、SIGINT/SIGTERM で graceful shutdown する。
 func serve(d serveDeps) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	defer d.Pool.Close()
+
+	if err := d.River.Start(ctx); err != nil {
+		return fmt.Errorf("start river client: %w", err)
+	}
+	d.Logger.Info("river client started")
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -139,8 +166,6 @@ func serve(d serveDeps) error {
 			errCh <- err
 		}
 	}()
-
-	// NOTE: river によるジョブ消費ループは ADR-0005 でここに追加する。
 
 	select {
 	case err := <-errCh:
@@ -151,6 +176,10 @@ func serve(d serveDeps) error {
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), d.Config.ShutdownTimeout)
 	defer cancel()
+	// river を graceful に停止し、実行中ジョブの完了を待つ。
+	if err := d.River.Stop(shutdownCtx); err != nil {
+		d.Logger.Warn("river stop error", "err", err)
+	}
 	if err := d.Health.Shutdown(shutdownCtx); err != nil {
 		return fmt.Errorf("graceful shutdown failed: %w", err)
 	}

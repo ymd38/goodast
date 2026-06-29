@@ -11,10 +11,11 @@
 ## 現在地スナップショット
 
 - フェーズ: **PoC Phase 1**
-- 作業ブランチ: `db/initial-schema`
-- PR #1（ADR-0001 + CI）: **マージ済み**
-- 進行中: 初期DBスキーマ + sqlc セットアップ
-- sqlc バージョン: **v1.31.1**（再生成時はこのバージョンを使う）
+- 作業ブランチ: `feat/0005-river-job-queue`
+- PR #1（ADR-0001 + CI）/ PR #2（DBスキーマ）: **マージ済み**
+- 進行中: ADR-0005 river ジョブキュー（api enqueue ↔ worker dequeue）
+- sqlc: **v1.31.1** / river: **v0.39.0**
+- モジュール構成: api / worker / **jobs（共有ジョブ契約・依存ゼロ）** の3モジュール（go.work + replace）
 - リモート: `ymd38/goodast`（**private**）
 - ブランチ戦略: 2-tier（feature → main、PR経由）
 - レビュー: **PR Agent（OpenAI）** に一本化
@@ -35,8 +36,13 @@
   - 4テーブル（sites / scan_credentials / scans / findings）、text+CHECK、FK CASCADE
   - api/worker 両モジュールに sqlc.yaml + 生成コード（`internal/db/`）+ 最小クエリ
   - throwaway PG で migrate up/down 検証済み
-- [ ] ADR-0005 river ジョブキュー（api enqueue ↔ worker dequeue）
-- [ ] ADR-0002 Nuclei SDK 統合（`worker/internal/engine/`）
+- [x] ADR-0005 river ジョブキュー（api enqueue ↔ worker dequeue）
+  - 共有 `jobs/` モジュール（ScanArgs / Kind="scan"）、river migrations 000002-000003
+  - api: `EnqueueScan`（scan行作成 + river InsertTx を1txで atomic enqueue）+ insert-only client
+  - worker: `ScanWorker`（queued→running→done のスタブ遷移。Nuclei は ADR-0002 で差込）+ graceful Stop
+  - 結合テスト（//go:build integration）で enqueue→process→done / atomic enqueue を検証
+- [ ] ADR-0002 Nuclei SDK 統合（`worker/internal/engine/` の Work() に差込）
+- [ ] スキャン開始 HTTP エンドポイント（scan feature・EnqueueScan を呼ぶ）
 - [ ] ADR-0004 ドメイン所有確認（ファイル設置 / DNS TXT）
 - [ ] ADR-0003 認証情報のアプリ層暗号化（`scan_credentials.enc_headers`）
 - [ ] サイト登録 / スキャン受付 API（site / scan feature）
@@ -81,14 +87,17 @@
 
 ## 直近のアクション（resume ポイント）
 
-1. `db/initial-schema` の PR 作成 → CI / PR Agent 確認 → マージ
-2. マージ後、**ADR-0005 river**（api enqueue ↔ worker dequeue）に着手
-3. その後、サイト登録 API（site feature）→ スキャン受付（scan feature）
+1. `feat/0005-river-job-queue` の PR 作成 → CI / PR Agent 確認 → マージ
+2. マージ後、**ADR-0002 Nuclei SDK 統合**（`worker/internal/engine/` を実装し ScanWorker.Work() のスタブと差し替え）
+3. 並行して **site feature**（サイト登録 + ドメイン所有確認 ADR-0004）、**scan 開始エンドポイント**
 
 ## メモ（運用）
 
 - マイグレーション適用: `migrate -path migrations -database "$DATABASE_URL" up`
 - sqlc 再生成: 各モジュールで `sqlc generate`（v1.31.1）。マイグレーション変更後は必須
+- river マイグレーションは CLI で生成: `go run github.com/riverqueue/river/cmd/river@v0.39.0 migrate-get --version N --up`
+  - `ALTER TYPE ... ADD VALUE` の制約により、enum 値追加(v4)と使用(v6)は別ファイル(別tx)に分割済み
+- 結合テスト実行: DB へ migrate 後 `TEST_DATABASE_URL=... go test -tags=integration ./...`
 - Makefile（`make migrate` / `make sqlc` 等）は未整備（TODO）
 
 ---

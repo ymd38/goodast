@@ -14,10 +14,14 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/riverqueue/river"
+	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 	"go.uber.org/dig"
 
 	"github.com/ymd38/goodast/api/internal/config"
+	"github.com/ymd38/goodast/api/internal/scan"
 )
 
 func main() {
@@ -42,6 +46,8 @@ func run() error {
 		func() *config.Config { return cfg },
 		func() *slog.Logger { return logger },
 		newPool,
+		newRiverClient,
+		scan.NewService,
 		newRouter,
 		newServer,
 	}
@@ -74,6 +80,12 @@ func newPool(cfg *config.Config) (*pgxpool.Pool, error) {
 		return nil, fmt.Errorf("create connection pool: %w", err)
 	}
 	return pool, nil
+}
+
+// newRiverClient は insert-only の river クライアントを生成する。
+// api はジョブを積むだけで処理はしない（worker に分離・ADR-0001）。Queues/Workers は持たない。
+func newRiverClient(pool *pgxpool.Pool) (*river.Client[pgx.Tx], error) {
+	return river.NewClient(riverpgxv5.New(pool), &river.Config{})
 }
 
 type routerDeps struct {
