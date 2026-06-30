@@ -83,6 +83,18 @@
 
 > throwaway PG で CHECK制約・状態遷移ガードの動作を検証済み。
 
+### PR #3（ADR-0005 river）レビュー backlog
+
+| ID | 指摘 | 対応 |
+|---|---|---|
+| L1 | `defer tx.Rollback` の errcheck | ✅ `defer func(){ _ = tx.Rollback(ctx) }()` |
+| S1 | EnqueueScan に所有確認ゲート無し（ADR-0004 違反） | ✅ enqueue 前に `ownership_verified` 検証 + localhost/127.0.0.1/::1/*.local 例外。純粋関数を unit テスト |
+| S2 | Work が非冪等でリトライ時に running のまま詰まる | ✅ StartScan の ErrNoRows 時に GetScan で現状態判定（running→続行 / done・failed→スキップ）。CompleteScan も冪等化 |
+| S3 | health server エラー経路で river が Stop されない | ✅ 共通 shutdown ブロックを両経路で通す構造に変更 |
+
+> 結合テストで「unverified→拒否・localhost→許可」「running→再開して done」を検証済み。
+> **worker 側の所有確認 defense-in-depth は ADR-0002 に持ち越し**（worker が site をロードして実スキャンする時に再チェック）。
+
 ---
 
 ## 直近のアクション（resume ポイント）

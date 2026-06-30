@@ -167,22 +167,26 @@ func serve(d serveDeps) error {
 		}
 	}()
 
+	// シグナル経路・ヘルスサーバ異常経路のどちらでも、以降の共通 shutdown を必ず通す。
+	var runErr error
 	select {
 	case err := <-errCh:
-		return fmt.Errorf("health server error: %w", err)
+		runErr = fmt.Errorf("health server error: %w", err)
 	case <-ctx.Done():
 		d.Logger.Info("shutdown signal received")
 	}
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), d.Config.ShutdownTimeout)
 	defer cancel()
-	// river を graceful に停止し、実行中ジョブの完了を待つ。
+	// river を graceful に停止し、実行中ジョブの完了を待つ（両経路で必ず実行する）。
 	if err := d.River.Stop(shutdownCtx); err != nil {
 		d.Logger.Warn("river stop error", "err", err)
 	}
-	if err := d.Health.Shutdown(shutdownCtx); err != nil {
-		return fmt.Errorf("graceful shutdown failed: %w", err)
+	if err := d.Health.Shutdown(shutdownCtx); err != nil && runErr == nil {
+		runErr = fmt.Errorf("graceful shutdown failed: %w", err)
 	}
-	d.Logger.Info("worker stopped")
-	return nil
+	if runErr == nil {
+		d.Logger.Info("worker stopped")
+	}
+	return runErr
 }
