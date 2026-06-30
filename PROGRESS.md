@@ -4,17 +4,17 @@
 > **新しいセッションはまずこのファイルを読み、現在地・次アクションを把握する。**
 > **各作業の区切りでこのファイルを更新する。** 決定の経緯は `MEMORY.md`、要件/フェーズは `docs/poc-plan.md` を正とする。
 
-最終更新: 2026-06-29
+最終更新: 2026-06-30
 
 ---
 
 ## 現在地スナップショット
 
 - フェーズ: **PoC Phase 1**
-- 作業ブランチ: `feat/0005-river-job-queue`
-- PR #1（ADR-0001 + CI）/ PR #2（DBスキーマ）: **マージ済み**
-- 進行中: ADR-0005 river ジョブキュー（api enqueue ↔ worker dequeue）
-- sqlc: **v1.31.1** / river: **v0.39.0**
+- 作業ブランチ: `feat/0002-nuclei-engine`
+- PR #1（ADR-0001 + CI）/ PR #2（DBスキーマ）/ PR #3（ADR-0005 river）: **マージ済み**
+- 進行中: ADR-0002 Nuclei SDK 統合（`worker/internal/engine/` 実装 + `Work()` 差込）
+- sqlc: **v1.31.1** / river: **v0.39.0** / **Nuclei SDK: v3.9.0（go.mod 固定）**
 - モジュール構成: api / worker / **jobs（共有ジョブ契約・依存ゼロ）** の3モジュール（go.work + replace）
 - リモート: `ymd38/goodast`（**private**）
 - ブランチ戦略: 2-tier（feature → main、PR経由）
@@ -41,7 +41,13 @@
   - api: `EnqueueScan`（scan行作成 + river InsertTx を1txで atomic enqueue）+ insert-only client
   - worker: `ScanWorker`（queued→running→done のスタブ遷移。Nuclei は ADR-0002 で差込）+ graceful Stop
   - 結合テスト（//go:build integration）で enqueue→process→done / atomic enqueue を検証
-- [ ] ADR-0002 Nuclei SDK 統合（`worker/internal/engine/` の Work() に差込）
+- [x] ADR-0002 Nuclei SDK 統合（`worker/internal/engine/` の Work() に差込）
+  - engine 純粋層（`engine.go` interface / `scope.go` allowlist・危険パス・所有確認 / `severity.go` 正規化 / `summary.go` 集計）= **unit 100%**
+  - `engine/nuclei/` に Nuclei v3.9.0 SDK アダプタを隔離（scope filter・保守的レート・severity フィルタ・破壊的タグ除外・sandbox=ローカルファイル禁止）。`//go:build integration` で検証、coverage 除外
+  - `GetScanTarget`（scans⨝sites）クエリ追加 + sqlc 再生成
+  - `Work()` 差替: GetScanTarget → 所有確認 defense-in-depth（ADR-0004）→ engine.Scan → findings 保存 → summary_json → CompleteScan、設定不備は FailScan
+  - 結合テスト（throwaway PG）で done+findings保存・resume冪等・未確認public→failed を検証
+  - **未認証スキャンのみ**。session 認証（Cookie/Bearer 持込）の復号・注入は ADR-0003 へ分離
 - [ ] スキャン開始 HTTP エンドポイント（scan feature・EnqueueScan を呼ぶ）
 - [ ] ADR-0004 ドメイン所有確認（ファイル設置 / DNS TXT）
 - [ ] ADR-0003 認証情報のアプリ層暗号化（`scan_credentials.enc_headers`）
@@ -99,9 +105,14 @@
 
 ## 直近のアクション（resume ポイント）
 
-1. `feat/0005-river-job-queue` の PR 作成 → CI / PR Agent 確認 → マージ
-2. マージ後、**ADR-0002 Nuclei SDK 統合**（`worker/internal/engine/` を実装し ScanWorker.Work() のスタブと差し替え）
-3. 並行して **site feature**（サイト登録 + ドメイン所有確認 ADR-0004）、**scan 開始エンドポイント**
+1. `feat/0002-nuclei-engine` の PR 作成 → CI / PR Agent 確認 → マージ
+2. **site feature**（サイト登録 + ドメイン所有確認 ADR-0004）、**scan 開始 HTTP エンドポイント**（`EnqueueScan` を呼ぶ）
+3. **ADR-0003 認証情報のアプリ層暗号化** → ここで worker に credential ロード＋復号＋ヘッダ注入（`engine.ScanRequest` にヘッダ受け口を追加し session スキャンを通す）
+4. Juice Shop で検知精度の検証（Nuclei CLI ベースライン vs goodast）: `NUCLEI_TEST_TARGET=http://localhost:3000` で `engine/nuclei` の integration テスト実行
+
+### ADR-0002 の持ち越し / 留意点
+- **nuclei-templates の取得は未実装**（SDK は既定 catalog 依存）。`make setup` / worker 起動時に固定バージョンを取得する配線は別途（企画書 §12「テンプレート配布」）。`engine/nuclei` の integration テストはテンプレート導入済みを前提にスキップ可能化済み
+- engine のレート/severity/除外タグは現状 `nuclei.DefaultConfig()` のコード定数。運用調整値（レート等）の env 化は必要になった時点で `config` に追加
 
 ## メモ（運用）
 

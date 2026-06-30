@@ -230,11 +230,17 @@ type HandlerDeps struct {
 - `internal/db/*.go` — sqlc 生成コード（編集禁止・再生成で消える）
 - `cmd/*/main.go` — エントリーポイント（DI の配線のみ）
 - `//go:build integration` のファイル — 別途 integration テストとして計測
+- `worker/internal/engine/nuclei` — Nuclei SDK アダプタ。SDK 呼び出しはネットワーク＋テンプレートを
+  要しユニットテスト不可のため、//go:build integration で検証する（ADR-0002）。純粋ロジック
+  （スコープ判定・severity 正規化・集計）は親パッケージ `engine` に置き 100% ユニット網羅する
+
+> 補足: `worker/internal/scanjob` は river/DB と結合する orchestration のため integration テストで
+> 網羅する（unit テストを持たない）。純粋ロジックは `engine` に切り出して unit 計測する方針。
 
 **CI での確認コマンド例**:
 ```bash
 go test -race -covermode=atomic -coverprofile=coverage.out \
-  $(go list ./... | grep -v '/db$\|/cmd/')
+  $(go list ./... | grep -v '/db$\|/cmd/\|/engine/nuclei$\|/scanjob$')
 go tool cover -func=coverage.out | grep -E "^total" 
 ```
 
