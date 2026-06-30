@@ -1,7 +1,10 @@
 version: "2"
 sql:
   - engine: "postgresql"
-    schema: "../migrations/*.up.sql"
+    # アプリスキーマの up マイグレーションのみ参照する。river のテーブルは river が管理する
+    # ため除外（新しいアプリ migration を追加したらこのリストに追記する）。
+    schema:
+      - "../migrations/000001_initial_schema.up.sql"
     queries: "internal/db/queries"
     gen:
       go:

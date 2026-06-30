@@ -11,10 +11,11 @@
 ## 現在地スナップショット
 
 - フェーズ: **PoC Phase 1**
-- 作業ブランチ: `db/initial-schema`
-- PR #1（ADR-0001 + CI）: **マージ済み**
-- 進行中: 初期DBスキーマ + sqlc セットアップ
-- sqlc バージョン: **v1.31.1**（再生成時はこのバージョンを使う）
+- 作業ブランチ: `feat/0005-river-job-queue`
+- PR #1（ADR-0001 + CI）/ PR #2（DBスキーマ）: **マージ済み**
+- 進行中: ADR-0005 river ジョブキュー（api enqueue ↔ worker dequeue）
+- sqlc: **v1.31.1** / river: **v0.39.0**
+- モジュール構成: api / worker / **jobs（共有ジョブ契約・依存ゼロ）** の3モジュール（go.work + replace）
 - リモート: `ymd38/goodast`（**private**）
 - ブランチ戦略: 2-tier（feature → main、PR経由）
 - レビュー: **PR Agent（OpenAI）** に一本化
@@ -35,8 +36,13 @@
   - 4テーブル（sites / scan_credentials / scans / findings）、text+CHECK、FK CASCADE
   - api/worker 両モジュールに sqlc.yaml + 生成コード（`internal/db/`）+ 最小クエリ
   - throwaway PG で migrate up/down 検証済み
-- [ ] ADR-0005 river ジョブキュー（api enqueue ↔ worker dequeue）
-- [ ] ADR-0002 Nuclei SDK 統合（`worker/internal/engine/`）
+- [x] ADR-0005 river ジョブキュー（api enqueue ↔ worker dequeue）
+  - 共有 `jobs/` モジュール（ScanArgs / Kind="scan"）、river migrations 000002-000003
+  - api: `EnqueueScan`（scan行作成 + river InsertTx を1txで atomic enqueue）+ insert-only client
+  - worker: `ScanWorker`（queued→running→done のスタブ遷移。Nuclei は ADR-0002 で差込）+ graceful Stop
+  - 結合テスト（//go:build integration）で enqueue→process→done / atomic enqueue を検証
+- [ ] ADR-0002 Nuclei SDK 統合（`worker/internal/engine/` の Work() に差込）
+- [ ] スキャン開始 HTTP エンドポイント（scan feature・EnqueueScan を呼ぶ）
 - [ ] ADR-0004 ドメイン所有確認（ファイル設置 / DNS TXT）
 - [ ] ADR-0003 認証情報のアプリ層暗号化（`scan_credentials.enc_headers`）
 - [ ] サイト登録 / スキャン受付 API（site / scan feature）
@@ -77,18 +83,35 @@
 
 > throwaway PG で CHECK制約・状態遷移ガードの動作を検証済み。
 
+### PR #3（ADR-0005 river）レビュー backlog
+
+| ID | 指摘 | 対応 |
+|---|---|---|
+| L1 | `defer tx.Rollback` の errcheck | ✅ `defer func(){ _ = tx.Rollback(ctx) }()` |
+| S1 | EnqueueScan に所有確認ゲート無し（ADR-0004 違反） | ✅ enqueue 前に `ownership_verified` 検証 + localhost/127.0.0.1/::1/*.local 例外。純粋関数を unit テスト |
+| S2 | Work が非冪等でリトライ時に running のまま詰まる | ✅ StartScan の ErrNoRows 時に GetScan で現状態判定（running→続行 / done・failed→スキップ）。CompleteScan も冪等化 |
+| S3 | health server エラー経路で river が Stop されない | ✅ 共通 shutdown ブロックを両経路で通す構造に変更 |
+
+> 結合テストで「unverified→拒否・localhost→許可」「running→再開して done」を検証済み。
+> **worker 側の所有確認 defense-in-depth は ADR-0002 に持ち越し**（worker が site をロードして実スキャンする時に再チェック）。
+
 ---
 
 ## 直近のアクション（resume ポイント）
 
-1. `db/initial-schema` の PR 作成 → CI / PR Agent 確認 → マージ
-2. マージ後、**ADR-0005 river**（api enqueue ↔ worker dequeue）に着手
-3. その後、サイト登録 API（site feature）→ スキャン受付（scan feature）
+1. `feat/0005-river-job-queue` の PR 作成 → CI / PR Agent 確認 → マージ
+2. マージ後、**ADR-0002 Nuclei SDK 統合**（`worker/internal/engine/` を実装し ScanWorker.Work() のスタブと差し替え）
+3. 並行して **site feature**（サイト登録 + ドメイン所有確認 ADR-0004）、**scan 開始エンドポイント**
 
 ## メモ（運用）
 
 - マイグレーション適用: `migrate -path migrations -database "$DATABASE_URL" up`
 - sqlc 再生成: 各モジュールで `sqlc generate`（v1.31.1）。マイグレーション変更後は必須
+- river マイグレーションは CLI で生成: `go run github.com/riverqueue/river/cmd/river@v0.39.0 migrate-get --version N --up`
+  - `ALTER TYPE ... ADD VALUE` の制約により、enum 値追加(v4)と使用(v6)は別ファイル(別tx)に分割済み
+- 結合テスト実行: DB へ migrate 後 `TEST_DATABASE_URL=... go test -tags=integration ./...`
+- ローカル lint は CI と同じ `golangci-lint v2.12.2` を使う。go 1.26.4 ターゲットを lint するには
+  リンタも 1.26.4 でビルドする必要がある: `GOTOOLCHAIN=go1.26.4 go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2`
 - Makefile（`make migrate` / `make sqlc` 等）は未整備（TODO）
 
 ---
