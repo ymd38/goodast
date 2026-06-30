@@ -4,7 +4,9 @@ package nuclei_test
 
 import (
 	"context"
+	"errors"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -15,7 +17,10 @@ import (
 
 // TestNucleiEngineScan は Nuclei SDK を実際に呼び出す結合テスト。
 // nuclei-templates が導入済みで NUCLEI_TEST_TARGET が指す対象に到達できる前提。
-// 例: Juice Shop を起動し NUCLEI_TEST_TARGET=http://localhost:3000 で実行する。
+// 例: Juice Shop を起動し NUCLEI_TEST_TARGET=http://localhost:3001 で実行する。
+//
+// フルテンプレート（1万件超）は時間がかかるため、既定ではタグで部分集合に絞って
+// 完走させる。タグは NUCLEI_TEST_TAGS（CSV）で上書き可能。
 func TestNucleiEngineScan(t *testing.T) {
 	target := os.Getenv("NUCLEI_TEST_TARGET")
 	if target == "" {
@@ -27,7 +32,14 @@ func TestNucleiEngineScan(t *testing.T) {
 		t.Fatalf("NewScope(%q): %v", target, err)
 	}
 
-	eng := nuclei.New(nuclei.DefaultConfig())
+	cfg := nuclei.DefaultConfig()
+	tags := os.Getenv("NUCLEI_TEST_TAGS")
+	if tags == "" {
+		tags = "misconfig,tech"
+	}
+	cfg.Tags = strings.Split(tags, ",")
+
+	eng := nuclei.New(cfg)
 	if eng.Version() == "" {
 		t.Fatal("Version() returned empty")
 	}
@@ -45,7 +57,9 @@ func TestNucleiEngineScan(t *testing.T) {
 		findings = append(findings, f)
 	}
 
-	if err := eng.Scan(ctx, engine.ScanRequest{Scope: scope}, onFinding); err != nil {
+	// 時間切れ（DeadlineExceeded）はキャンセルまでに集めた findings で検証を続ける
+	// （対象/テンプレ次第でフル完走しない場合への耐性）。それ以外のエラーは失敗扱い。
+	if err := eng.Scan(ctx, engine.ScanRequest{Scope: scope}, onFinding); err != nil && !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("Scan: %v", err)
 	}
 

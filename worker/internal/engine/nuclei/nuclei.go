@@ -28,6 +28,9 @@ type Config struct {
 	RatePeriod time.Duration
 	// Severities は実行対象 severity の CSV（空文字なら全 severity）。
 	Severities string
+	// Tags は実行対象を絞り込むタグ（空なら全テンプレート）。スキャンプリセット
+	// （軽量/標準/詳細）の実装やテストでの高速な部分実行に用いる。
+	Tags []string
 	// ExcludeTags は除外タグ。破壊的テンプレート（dos 等）をデフォルト無効化する。
 	ExcludeTags []string
 }
@@ -68,6 +71,7 @@ func (e *Engine) Scan(ctx context.Context, req engine.ScanRequest, onFinding eng
 	ne, err := nucleilib.NewNucleiEngineCtx(ctx,
 		nucleilib.WithTemplateFilters(nucleilib.TemplateFilters{
 			Severity:    e.cfg.Severities,
+			Tags:        e.cfg.Tags,
 			ExcludeTags: e.cfg.ExcludeTags,
 		}),
 		// 保守的な全体レート制限（DoS 化防止）。
