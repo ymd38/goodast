@@ -101,6 +101,23 @@
 > 結合テストで「unverified→拒否・localhost→許可」「running→再開して done」を検証済み。
 > **worker 側の所有確認 defense-in-depth は ADR-0002 に持ち越し**（worker が site をロードして実スキャンする時に再チェック）。
 
+### PR #4（ADR-0002 Nuclei engine）レビュー backlog（Qodo）
+
+| ID | 指摘 | 判定 / 対応 |
+|---|---|---|
+| Q-4 | 実行失敗で scan が running 固定 | ✅ 最終試行（`job.Attempt>=MaxAttempts`）で `FailScan` 確定。それ以外は再試行 |
+| Q-5 | リトライで findings 重複 | ✅ 実行前に `DeleteFindingsByScan` で掃除し再実行を冪等化。結合テストで検証 |
+| Q-7 | `markFailed` がDB失敗を握り潰す | ✅ `markFailed` を error 返却化、失敗時は error を返し running 放置を防ぐ |
+| Q-8 | Scope がポート未考慮 | ✅ allowlist を host:port（scheme既定で補完）一致に厳格化。unit 100% |
+| Q-2 | 危険パスが結果フィルタのみ | ⚠️ 一部対応: `intrusive` タグ除外を追加（dosに加え）。per-request パス遮断は SDK 非対応のため**クロール/認証フェーズへ持ち越し**（下記） |
+| Q-6 | スコープ強制がリクエスト時でない | ⚠️ 同上。`WithOptions` は opts 全置換で不可。post-filter を defense-in-depth として維持 |
+| Q-1 | ParseSeverity が severity 改変 | ❌ 反論: DB CHECK が `Critical/High/..` 固定。値は1:1保持・大小文字正規化のみ、`unknown`→`Info` は schema 都合の安全コアース |
+| Q-3 | CLI parity / 認証スキャン比較テストなし | ❌ 反論: §10 はプロジェクト DoD。認証スキャンは ADR-0003 未実装で本PR範囲外。検知精度検証は専用タスク |
+
+> **持ち越し（重要）**: リクエスト時の host/path 厳密遮断は、単一ターゲット・非クロール（katana無効）・
+> DAST fuzzing 無効の現状では逸脱の主経路が限定的。クロール/認証スキャン導入時にカスタム
+> transport / redirect ポリシーで実装する（その時点で初めて必要十分になる）。
+
 ---
 
 ## 直近のアクション（resume ポイント）

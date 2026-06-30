@@ -14,8 +14,9 @@ var dangerousPathSegments = []string{"logout", "signout", "delete", "remove", "d
 // Scope はスキャン対象の許可境界（allowlist）を表す値オブジェクト。
 // 登録ホスト外への逸脱と危険パスへのアクセスを拒否する判定をここに集約する。
 type Scope struct {
-	baseURL string
-	host    string
+	baseURL   string
+	host      string // ホスト名のみ（小文字）。所有確認・ローカル判定に使う。
+	authority string // host:port（scheme 既定ポートで補完）。allowlist 判定に使う。
 }
 
 // NewScope は base URL から Scope を生成する。http(s) かつホストを持つ URL のみ許可し、
@@ -32,26 +33,48 @@ func NewScope(baseURL string) (Scope, error) {
 	if host == "" {
 		return Scope{}, fmt.Errorf("invalid base url %q: missing host", baseURL)
 	}
-	return Scope{baseURL: baseURL, host: strings.ToLower(host)}, nil
+	return Scope{
+		baseURL:   baseURL,
+		host:      strings.ToLower(host),
+		authority: authorityOf(u),
+	}, nil
 }
 
 // BaseURL はスキャン投入先の URL を返す。
 func (s Scope) BaseURL() string { return s.baseURL }
 
-// Host は許可ホスト（小文字正規化済み）を返す。
+// Host は許可ホスト名（小文字正規化済み・ポートなし）を返す。
 func (s Scope) Host() string { return s.host }
 
-// Allows は検出 URL がスコープ内か（同一ホスト かつ 危険パスでない）を判定する。
-// 解析不能な URL・ホスト不一致・危険パスはすべて拒否する。
+// Allows は検出 URL がスコープ内か（同一 host:port かつ 危険パスでない）を判定する。
+// ポートも境界として扱うため、同一ホスト名でも別ポートの URL は拒否する。
+// 解析不能な URL・host:port 不一致・危険パスはすべて拒否する。
 func (s Scope) Allows(rawURL string) bool {
 	u, err := url.Parse(rawURL)
 	if err != nil {
 		return false
 	}
-	if strings.ToLower(u.Hostname()) != s.host {
+	if u.Hostname() == "" || (u.Scheme != "http" && u.Scheme != "https") {
+		return false
+	}
+	if authorityOf(u) != s.authority {
 		return false
 	}
 	return !IsDangerousPath(u.Path)
+}
+
+// authorityOf は URL を host:port に正規化する。明示ポートが無い場合は scheme の
+// 既定ポート（http=80 / https=443）で補完し、ポート省略表記の差異を吸収する。
+func authorityOf(u *url.URL) string {
+	port := u.Port()
+	if port == "" {
+		if u.Scheme == "https" {
+			port = "443"
+		} else {
+			port = "80"
+		}
+	}
+	return strings.ToLower(u.Hostname()) + ":" + port
 }
 
 // RequiresOwnershipVerification はこのスコープが所有確認を要するかを返す（ADR-0004）。

@@ -36,12 +36,16 @@ type Config struct {
 }
 
 // DefaultConfig は PoC の保守的デフォルト設定を返す。
+//
+// ExcludeTags は破壊的・状態変更を伴うテンプレートをデフォルト無効化する（ADR / Critical
+// Constraints）。`dos`（DoS 系）に加え `intrusive`（状態変更・攻撃的）を除外し、テンプレート
+// 選択の段階で副作用リスクを下げる。これは SDK が確実に強制できる唯一のレバー。
 func DefaultConfig() Config {
 	return Config{
 		RateLimit:   10,
 		RatePeriod:  time.Second,
 		Severities:  "",
-		ExcludeTags: []string{"dos"},
+		ExcludeTags: []string{"dos", "intrusive"},
 	}
 }
 
@@ -67,6 +71,17 @@ func (e *Engine) Version() string { return version }
 // 並行スキャン（river MaxWorkers > 1）でも状態を共有しないよう、呼び出しごとに
 // NucleiEngine を生成・破棄する。検出は engine 層ガードレール（スコープ allowlist /
 // 危険パス除外）を通過したものだけ onFinding へ渡す。
+//
+// ガードレールの強制レベル（既知の制約・要レビュー）:
+//   - テンプレート選択: 破壊的タグ（dos / intrusive）を ExcludeTags で除外（リクエスト前に効く）。
+//   - レート: WithGlobalRateLimit で保守的に抑制。
+//   - 検出フィルタ: toFinding で scope.Allows（同一 host:port・非危険パス）を満たさない結果を破棄。
+//
+// 注意（持ち越し）: Nuclei lib には per-request の host/path allowlist を安全に注入する手段が
+// ない（WithOptions は opts を丸ごと置換し既定を壊す）。現状は単一ターゲット・非クロール
+// （katana 無効）・DAST fuzzing 無効のため逸脱の主経路はテンプレートの固定パス要求と
+// クロスホスト redirect に限られる。リクエスト時の厳密な host/path 遮断（カスタム transport /
+// redirect ポリシー）はクロール・認証スキャン導入フェーズで実装する。
 func (e *Engine) Scan(ctx context.Context, req engine.ScanRequest, onFinding engine.FindingCallback) error {
 	ne, err := nucleilib.NewNucleiEngineCtx(ctx,
 		nucleilib.WithTemplateFilters(nucleilib.TemplateFilters{

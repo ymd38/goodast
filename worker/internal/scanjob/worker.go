@@ -73,13 +73,18 @@ func (w *Worker) Work(ctx context.Context, job *river.Job[jobs.ScanArgs]) error 
 		return fmt.Errorf("start scan %s: %w", scanID, err)
 	}
 
-	return w.runScan(ctx, scanID, pgID)
+	// 最終試行かを判定する。engine の一過性エラーは再試行に委ね、最後の試行でも
+	// 失敗した場合は failed に確定させて scan が running のまま残らないようにする（#4）。
+	lastAttempt := job.Attempt >= job.MaxAttempts
+	return w.runScan(ctx, scanID, pgID, lastAttempt)
 }
 
 // runScan はスキャン対象をロードし、ガードレールを確認した上で engine スキャンを実行、
 // findings を保存して scan を done にする。設定不備（不正 URL・所有未確認）は再試行しても
-// 直らないため failed にして job を完了扱いにする。engine の実行エラーは再試行に委ねる。
-func (w *Worker) runScan(ctx context.Context, scanID uuid.UUID, pgID pgtype.UUID) error {
+// 直らないため failed にする。engine の実行エラーは原則再試行に委ね、最終試行で失敗した
+// 場合のみ failed に確定する。状態更新（FailScan）に失敗した場合は error を返し、
+// scan が running のまま握り潰されないようにする（#7）。
+func (w *Worker) runScan(ctx context.Context, scanID uuid.UUID, pgID pgtype.UUID, lastAttempt bool) error {
 	target, err := w.queries.GetScanTarget(ctx, pgID)
 	if err != nil {
 		return fmt.Errorf("get scan target %s: %w", scanID, err)
@@ -88,8 +93,7 @@ func (w *Worker) runScan(ctx context.Context, scanID uuid.UUID, pgID pgtype.UUID
 	scope, err := engine.NewScope(target.BaseUrl)
 	if err != nil {
 		w.logger.Error("invalid scan target; marking failed", "scan_id", scanID, "err", err)
-		w.markFailed(ctx, scanID, pgID)
-		return nil
+		return w.markFailed(ctx, scanID, pgID)
 	}
 
 	// defense-in-depth（ADR-0004）: api の受付ゲートに加え worker でも所有確認する。
@@ -97,12 +101,16 @@ func (w *Worker) runScan(ctx context.Context, scanID uuid.UUID, pgID pgtype.UUID
 	if scope.RequiresOwnershipVerification() && !target.OwnershipVerified {
 		w.logger.Warn("scan target ownership not verified; marking failed",
 			"scan_id", scanID, "host", scope.Host())
-		w.markFailed(ctx, scanID, pgID)
-		return nil
+		return w.markFailed(ctx, scanID, pgID)
 	}
 
 	findings, err := w.executeScan(ctx, pgID, scope)
 	if err != nil {
+		if lastAttempt {
+			// 最終試行でも失敗: failed に確定する。状態更新に失敗したら error を返し再試行に回す。
+			w.logger.Error("scan failed on final attempt; marking failed", "scan_id", scanID, "err", err)
+			return w.markFailed(ctx, scanID, pgID)
+		}
 		// 一過性の可能性があるため failed にはせず、river の再試行に委ねる。
 		return fmt.Errorf("scan %s: %w", scanID, err)
 	}
@@ -126,7 +134,14 @@ func (w *Worker) runScan(ctx context.Context, scanID uuid.UUID, pgID pgtype.UUID
 
 // executeScan は engine スキャンを実行し、検出ごとに finding を保存しつつ収集して返す。
 // onFinding は複数 goroutine から呼ばれ得るため mutex で直列化する（contract 準拠）。
+//
+// 再試行（running からの再開）での重複保存を防ぐため、実行前に当該 scan の findings を
+// 掃除して再実行を冪等にする（#5）。
 func (w *Worker) executeScan(ctx context.Context, pgID pgtype.UUID, scope engine.Scope) ([]engine.Finding, error) {
+	if err := w.queries.DeleteFindingsByScan(ctx, pgID); err != nil {
+		return nil, fmt.Errorf("clear prior findings: %w", err)
+	}
+
 	var (
 		mu        sync.Mutex
 		collected []engine.Finding
@@ -154,11 +169,17 @@ func (w *Worker) executeScan(ctx context.Context, pgID pgtype.UUID, scope engine
 	return collected, nil
 }
 
-// markFailed は scan を failed にする。既に終端状態（ErrNoRows）なら何もしない。
-func (w *Worker) markFailed(ctx context.Context, scanID uuid.UUID, pgID pgtype.UUID) {
-	if _, err := w.queries.FailScan(ctx, pgID); err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		w.logger.Error("mark scan failed", "scan_id", scanID, "err", err)
+// markFailed は scan を failed にし、ジョブを完了扱い（nil）にしてよいかを返す。
+// 既に終端状態（ErrNoRows）なら冪等に nil を返す。状態更新そのものに失敗した場合は
+// error を返し、scan が running のまま握り潰されないようにする（#7）。
+func (w *Worker) markFailed(ctx context.Context, scanID uuid.UUID, pgID pgtype.UUID) error {
+	if _, err := w.queries.FailScan(ctx, pgID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil // 既に終端状態。失敗確定済みとして扱う。
+		}
+		return fmt.Errorf("mark scan %s failed: %w", scanID, err)
 	}
+	return nil
 }
 
 // insertParams は engine.Finding を InsertFinding の引数に変換する。

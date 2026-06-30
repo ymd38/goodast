@@ -40,27 +40,42 @@ func TestNewScope(t *testing.T) {
 }
 
 func TestScopeAllows(t *testing.T) {
-	s, err := NewScope("https://example.com")
-	if err != nil {
-		t.Fatalf("NewScope: %v", err)
-	}
 	tests := []struct {
-		name string
-		url  string
-		want bool
+		name    string
+		baseURL string
+		url     string
+		want    bool
 	}{
-		{"same host allowed", "https://example.com/products?id=1", true},
-		{"same host other path", "https://example.com/api/users", true},
-		{"different host rejected", "https://evil.com/x", false},
-		{"subdomain rejected", "https://api.example.com/x", false},
-		{"dangerous logout rejected", "https://example.com/account/logout", false},
-		{"dangerous admin rejected", "https://example.com/admin/users", false},
-		{"unparseable rejected", "http://%zz", false},
+		// 既定ポート（https=443）の補完: ポート省略表記の差異を吸収する。
+		{"same host allowed", "https://example.com", "https://example.com/products?id=1", true},
+		{"same host other path", "https://example.com", "https://example.com/api/users", true},
+		{"explicit default port matches implicit", "https://example.com", "https://example.com:443/x", true},
+		{"implicit default port matches explicit", "https://example.com:443", "https://example.com/x", true},
+		// 既定ポート（http=80）の補完。
+		{"http default port", "http://example.com", "http://example.com:80/x", true},
+		// ホスト不一致・サブドメイン。
+		{"different host rejected", "https://example.com", "https://evil.com/x", false},
+		{"subdomain rejected", "https://example.com", "https://api.example.com/x", false},
+		// ポート境界: 同一ホストでも別ポートは拒否（#8）。
+		{"different port rejected", "http://localhost:3001", "http://localhost:3000/x", false},
+		{"same explicit port allowed", "http://localhost:3001", "http://localhost:3001/x", true},
+		{"non-default port mismatch", "https://example.com", "https://example.com:8443/x", false},
+		// 危険パス。
+		{"dangerous logout rejected", "https://example.com", "https://example.com/account/logout", false},
+		{"dangerous admin rejected", "https://example.com", "https://example.com/admin/users", false},
+		// 不正な検出 URL。
+		{"unparseable rejected", "https://example.com", "http://%zz", false},
+		{"non-http scheme rejected", "https://example.com", "ftp://example.com/x", false},
+		{"relative url rejected", "https://example.com", "/relative/path", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			s, err := NewScope(tt.baseURL)
+			if err != nil {
+				t.Fatalf("NewScope(%q): %v", tt.baseURL, err)
+			}
 			if got := s.Allows(tt.url); got != tt.want {
-				t.Errorf("Allows(%q) = %v, want %v", tt.url, got, tt.want)
+				t.Errorf("Allows(%q) [base %q] = %v, want %v", tt.url, tt.baseURL, got, tt.want)
 			}
 		})
 	}

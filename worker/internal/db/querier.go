@@ -12,6 +12,9 @@ import (
 
 type Querier interface {
 	CompleteScan(ctx context.Context, arg CompleteScanParams) (Scan, error)
+	// スキャン再試行（running からの再開）時に、部分保存済みの findings を掃除して
+	// 再挿入による重複を防ぐ。スキャン実行直前に呼ぶことで再実行を冪等にする。
+	DeleteFindingsByScan(ctx context.Context, scanID pgtype.UUID) error
 	FailScan(ctx context.Context, id pgtype.UUID) (Scan, error)
 	// 状態遷移ガード: WHERE に現在の status を含め、queued→running→done/failed の
 	// ライフサイクルのみを許可する。不正な遷移は 0 行更新となり :one では ErrNoRows を
