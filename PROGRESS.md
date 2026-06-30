@@ -29,7 +29,7 @@
 - [x] ADR-0001 api/worker プロセス分離（go.work + 2モジュール）
 - [x] Day-1 運用規約（slog / dig / config / pgxpool / graceful shutdown / health）
 - [x] GitHub Actions（CI matrix / security-scan / PR Agent）
-- [ ] Makefile（`make dev-api` 等の想定ターゲット）
+- [x] Makefile（`make help` で一覧。db/migrate/sqlc/dev/test/lint/cover/juiceshop/nuclei-scan）
 
 ### 実装
 - [x] DBスキーマ: `migrations/000001_initial_schema` + sqlc セットアップ（企画書 §5）
@@ -123,7 +123,8 @@
 - 結合テスト実行: DB へ migrate 後 `TEST_DATABASE_URL=... go test -tags=integration ./...`
 - ローカル lint は CI と同じ `golangci-lint v2.12.2` を使う。go 1.26.4 ターゲットを lint するには
   リンタも 1.26.4 でビルドする必要がある: `GOTOOLCHAIN=go1.26.4 go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2`
-- Makefile（`make migrate` / `make sqlc` 等）は未整備（TODO）
+- Makefile 整備済み（`make help`）。Juice Shop は `make juiceshop-up`（compose profile・loopback :3001）、
+  実スキャン確認は `make nuclei-scan`（`NUCLEI_TEST_TARGET` / `NUCLEI_TEST_TAGS`）。テンプレ取得は `make nuclei-templates`
 
 ---
 
