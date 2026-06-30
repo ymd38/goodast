@@ -98,6 +98,8 @@
 - river マイグレーションは CLI で生成: `go run github.com/riverqueue/river/cmd/river@v0.39.0 migrate-get --version N --up`
   - `ALTER TYPE ... ADD VALUE` の制約により、enum 値追加(v4)と使用(v6)は別ファイル(別tx)に分割済み
 - 結合テスト実行: DB へ migrate 後 `TEST_DATABASE_URL=... go test -tags=integration ./...`
+- ローカル lint は CI と同じ `golangci-lint v2.12.2` を使う。go 1.26.4 ターゲットを lint するには
+  リンタも 1.26.4 でビルドする必要がある: `GOTOOLCHAIN=go1.26.4 go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2`
 - Makefile（`make migrate` / `make sqlc` 等）は未整備（TODO）
 
 ---

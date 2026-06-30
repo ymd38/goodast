@@ -33,7 +33,8 @@ func (s *Service) EnqueueScan(ctx context.Context, siteID uuid.UUID) (uuid.UUID,
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("begin tx: %w", err)
 	}
-	defer tx.Rollback(ctx)
+	// コミット後の Rollback は no-op（ErrTxClosed）。エラーは意図的に無視する。
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	scan, err := db.New(tx).CreateScan(ctx, pgtype.UUID{Bytes: siteID, Valid: true})
 	if err != nil {
