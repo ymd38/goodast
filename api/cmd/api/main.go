@@ -21,7 +21,10 @@ import (
 	"go.uber.org/dig"
 
 	"github.com/ymd38/goodast/api/internal/config"
+	"github.com/ymd38/goodast/api/internal/db"
+	"github.com/ymd38/goodast/api/internal/handler"
 	"github.com/ymd38/goodast/api/internal/scan"
+	"github.com/ymd38/goodast/api/internal/site"
 )
 
 func main() {
@@ -46,8 +49,13 @@ func run() error {
 		func() *config.Config { return cfg },
 		func() *slog.Logger { return logger },
 		newPool,
+		func(pool *pgxpool.Pool) *db.Queries { return db.New(pool) },
 		newRiverClient,
 		scan.NewService,
+		site.NewRepository,
+		site.DefaultVerifier,
+		site.NewService,
+		handler.NewSiteHandler,
 		newRouter,
 		newServer,
 	}
@@ -91,6 +99,7 @@ func newRiverClient(pool *pgxpool.Pool) (*river.Client[pgx.Tx], error) {
 type routerDeps struct {
 	dig.In
 	Pool   *pgxpool.Pool
+	Site   *handler.SiteHandler
 	Logger *slog.Logger
 }
 
@@ -98,6 +107,9 @@ func newRouter(d routerDeps) *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
 	r.Use(gin.Recovery())
+
+	// feature ハンドラのルート登録。
+	d.Site.RegisterRoutes(r)
 
 	// liveness: プロセス死活のみ。DB は見ない。
 	r.GET("/healthz", func(c *gin.Context) {
