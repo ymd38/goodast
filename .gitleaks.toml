@@ -5,3 +5,12 @@ title = "Gitleaks configuration for goodast"
 # ファイル全体の allowlist は secret-scan のバイパスになるため行わない。
 [extend]
 useDefault = true
+
+# 所有確認トークン（VerifyToken）のテスト用固定値。32桁hex が generic-api-key に
+# 誤検知されるため、決定論的な非秘匿フィクスチャの exact 値のみを許可する（値限定・全一致）。
+[allowlist]
+description = "Deterministic non-secret VerifyToken test fixtures (site *_test.go)"
+regexes = [
+    '''^0123456789abcdef0123456789abcdef$''',
+    '''^ffffffffffffffffffffffffffffffff$''',
+]
