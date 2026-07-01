@@ -4,6 +4,7 @@ package handler
 
 import (
 	"errors"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -16,18 +17,20 @@ import (
 
 // SiteHandler はサイト登録・所有確認の HTTP ハンドラ。
 type SiteHandler struct {
-	svc *site.Service
+	svc    *site.Service
+	logger *slog.Logger
 }
 
 // SiteHandlerDeps は SiteHandler の依存（dig struct-based injection）。
 type SiteHandlerDeps struct {
 	dig.In
 	Service *site.Service
+	Logger  *slog.Logger
 }
 
 // NewSiteHandler は SiteHandler を生成する。
 func NewSiteHandler(d SiteHandlerDeps) *SiteHandler {
-	return &SiteHandler{svc: d.Service}
+	return &SiteHandler{svc: d.Service, logger: d.Logger}
 }
 
 // RegisterRoutes は site 関連のルートを登録する。
@@ -89,9 +92,12 @@ func (h *SiteHandler) register(c *gin.Context) {
 		switch {
 		case errors.Is(err, site.ErrSiteNameTaken):
 			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
-		default:
-			// 不正な base_url（スキーマ/ホスト）等の入力エラーは 400。
+		case errors.Is(err, site.ErrInvalidBaseURL):
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		default:
+			// DB 障害等の内部エラーは 500。原因は server-side ログに残す。
+			h.logger.Error("register site failed", "err", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 		}
 		return
 	}
@@ -169,16 +175,19 @@ func toSiteResponse(s site.Site) siteResponse {
 	if s.VerifyToken != nil {
 		tok := s.VerifyToken.String()
 		resp.VerifyToken = &tok
-		resp.Verification = buildGuide(s)
+	}
+	// 設置ガイドは method と token が揃っている時のみ生成する（不整合データでの nil deref 防止）。
+	if s.VerifyMethod != nil && s.VerifyToken != nil {
+		resp.Verification = buildGuide(*s.VerifyMethod, s.VerifyToken.String())
 	}
 	return resp
 }
 
-// buildGuide は所有確認の設置手順を組み立てる（token を持つ site 前提）。
-func buildGuide(s site.Site) *verificationGuide {
-	token := s.VerifyToken.String()
-	g := &verificationGuide{Method: string(*s.VerifyMethod)}
-	switch *s.VerifyMethod {
+// buildGuide は所有確認の設置手順を組み立てる。必要な値のみを引数で受け取り、
+// ポインタの deref を呼び出し側に閉じ込める（helper 内での nil deref を構造的に排除）。
+func buildGuide(method site.VerifyMethod, token string) *verificationGuide {
+	g := &verificationGuide{Method: string(method)}
+	switch method {
 	case site.VerifyMethodFile:
 		g.FilePath = "/.well-known/goodast-verify/" + token
 		g.FileContent = token

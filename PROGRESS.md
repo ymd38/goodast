@@ -124,6 +124,17 @@
 
 ---
 
+### PR #5（ADR-0004 site feature）レビュー backlog（Qodo / PR Agent）
+
+| ID | 指摘 | 対応 |
+|---|---|---|
+| V1 | file 方式がリダイレクト追従で所有確認バイパス（Security） | ✅ `DefaultVerifier` の http.Client に `CheckRedirect=noRedirect`（3xx→非200で失敗）。unit テスト |
+| V2 | `buildGuide` が nil method で panic（不整合データ） | ✅ `toSiteResponse` を method/token 両 non-nil 時のみ guide 生成に修正 + `buildGuide` を明示引数化 + **migration 000004 で `(verify_method IS NULL)=(verify_token IS NULL)` CHECK 制約**。unit テストで nil 安全性検証 |
+| V3 | Register が内部エラーも 400 に誤分類（Correctness） | ✅ `ErrInvalidBaseURL` 追加。409/400/500 に分岐し 500 はログ出力。integration で ftp→400 検証 |
+| （PR Agent）repository で部分データ拒否 | ⏭️ V2 の CHECK 制約が根本対策のため repository 追加検証は見送り（service は常に両方セット） |
+
+> gitleaks 誤検知（テスト固定 hex トークン）は `.gitleaks.toml` に exact 値 allowlist で対応済み。
+
 ## 直近のアクション（resume ポイント）
 
 1. `feat/0004-site-ownership-verification` の PR 作成 → CI / PR Agent 確認 → マージ（ADR-0002 はマージ済み）

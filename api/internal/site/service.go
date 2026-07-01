@@ -20,6 +20,8 @@ var (
 	ErrSiteNotFound = errors.New("site: not found")
 	// ErrSiteNameTaken は同名サイトが既に存在する。
 	ErrSiteNameTaken = errors.New("site: name already taken")
+	// ErrInvalidBaseURL は base_url がスキーム/ホスト等の面で不正な入力エラー。
+	ErrInvalidBaseURL = errors.New("site: invalid base url")
 	// ErrVerificationFailed は所有確認に失敗した（ファイル未設置・TXT不一致・到達不能）。
 	ErrVerificationFailed = errors.New("site: ownership verification failed")
 )
@@ -59,7 +61,8 @@ type RegisterParams struct {
 func (s *Service) Register(ctx context.Context, p RegisterParams) (Site, error) {
 	required, err := target.RequiresOwnershipVerification(p.BaseURL)
 	if err != nil {
-		return Site{}, fmt.Errorf("evaluate target: %w", err)
+		// base_url の scheme/host 不正はクライアント入力エラーとして分類する。
+		return Site{}, fmt.Errorf("%w: %v", ErrInvalidBaseURL, err)
 	}
 
 	cp := CreateParams{Name: p.Name, BaseURL: p.BaseURL}

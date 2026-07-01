@@ -108,3 +108,10 @@ func TestDefaultVerifier(t *testing.T) {
 		t.Fatal("DefaultVerifier returned nil")
 	}
 }
+
+func TestNoRedirect(t *testing.T) {
+	// 所有確認はリダイレクトを追従してはならない（別ホストへの遷移で確認バイパスを防ぐ）。
+	if err := noRedirect(nil, nil); !errors.Is(err, http.ErrUseLastResponse) {
+		t.Fatalf("noRedirect = %v, want ErrUseLastResponse", err)
+	}
+}

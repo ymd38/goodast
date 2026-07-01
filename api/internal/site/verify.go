@@ -34,11 +34,24 @@ func NewVerifier(h httpDoer, d dnsResolver) *Verifier {
 }
 
 // DefaultVerifier は本番用の Verifier（保守的なタイムアウト付き HTTP クライアント + システムリゾルバ）。
+//
+// リダイレクトは追従しない（ADR-0004・セキュリティ）。追従を許すと、登録ドメインの
+// well-known ファイルが別ホストへリダイレクトしてトークン一致するだけで所有確認が
+// 成立してしまい、「指定 base_url のドメイン所有確認」という要件が崩れるため。
 func DefaultVerifier() *Verifier {
 	return &Verifier{
-		http: &http.Client{Timeout: 10 * time.Second},
-		dns:  net.DefaultResolver,
+		http: &http.Client{
+			Timeout:       10 * time.Second,
+			CheckRedirect: noRedirect,
+		},
+		dns: net.DefaultResolver,
 	}
+}
+
+// noRedirect は http.Client にリダイレクト追従を止めさせる（3xx をそのまま返す）。
+// verifyFile 側で status != 200 として失敗扱いになる。
+func noRedirect(*http.Request, []*http.Request) error {
+	return http.ErrUseLastResponse
 }
 
 // Verify は指定方式で所有確認を行う。成功で nil、不一致・到達不能で error を返す。

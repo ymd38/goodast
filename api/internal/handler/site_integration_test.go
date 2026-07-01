@@ -119,10 +119,15 @@ func TestSiteHandlerFlow(t *testing.T) {
 	}
 	localID, _ := lbody["id"].(string)
 
-	// バリデーション: 不正 base_url は 400。
+	// バリデーション: 不正 base_url は 400（gin バインディング）。
 	if code, _ := doJSON(t, r, http.MethodPost, "/sites",
 		`{"name":"x-`+uuid.NewString()+`","base_url":"not a url"}`); code != http.StatusBadRequest {
 		t.Errorf("invalid base_url: code=%d want 400", code)
+	}
+	// service 層の ErrInvalidBaseURL 分類: バインディングは通るが scheme 不正 → 400。
+	if code, _ := doJSON(t, r, http.MethodPost, "/sites",
+		`{"name":"x-`+uuid.NewString()+`","base_url":"ftp://example.com"}`); code != http.StatusBadRequest {
+		t.Errorf("ftp scheme: code=%d want 400 (ErrInvalidBaseURL)", code)
 	}
 
 	// 一覧。
