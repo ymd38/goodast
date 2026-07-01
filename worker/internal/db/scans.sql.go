@@ -86,6 +86,38 @@ func (q *Queries) GetScan(ctx context.Context, id pgtype.UUID) (Scan, error) {
 	return i, err
 }
 
+const getScanTarget = `-- name: GetScanTarget :one
+SELECT
+    sc.site_id            AS site_id,
+    sc.status             AS status,
+    s.base_url            AS base_url,
+    s.ownership_verified  AS ownership_verified
+FROM scans sc
+JOIN sites s ON s.id = sc.site_id
+WHERE sc.id = $1
+`
+
+type GetScanTargetRow struct {
+	SiteID            pgtype.UUID `json:"site_id"`
+	Status            string      `json:"status"`
+	BaseUrl           string      `json:"base_url"`
+	OwnershipVerified bool        `json:"ownership_verified"`
+}
+
+// worker が scan_id からスキャン対象（site）情報をロードする。実スキャン前の
+// defense-in-depth 所有確認（ADR-0004）と、スキャン投入先 URL の取得に用いる。
+func (q *Queries) GetScanTarget(ctx context.Context, id pgtype.UUID) (GetScanTargetRow, error) {
+	row := q.db.QueryRow(ctx, getScanTarget, id)
+	var i GetScanTargetRow
+	err := row.Scan(
+		&i.SiteID,
+		&i.Status,
+		&i.BaseUrl,
+		&i.OwnershipVerified,
+	)
+	return i, err
+}
+
 const startScan = `-- name: StartScan :one
 UPDATE scans
 SET status = 'running', started_at = now(), engine_version = $2

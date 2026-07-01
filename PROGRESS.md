@@ -4,17 +4,17 @@
 > **新しいセッションはまずこのファイルを読み、現在地・次アクションを把握する。**
 > **各作業の区切りでこのファイルを更新する。** 決定の経緯は `MEMORY.md`、要件/フェーズは `docs/poc-plan.md` を正とする。
 
-最終更新: 2026-06-29
+最終更新: 2026-06-30
 
 ---
 
 ## 現在地スナップショット
 
 - フェーズ: **PoC Phase 1**
-- 作業ブランチ: `feat/0005-river-job-queue`
-- PR #1（ADR-0001 + CI）/ PR #2（DBスキーマ）: **マージ済み**
-- 進行中: ADR-0005 river ジョブキュー（api enqueue ↔ worker dequeue）
-- sqlc: **v1.31.1** / river: **v0.39.0**
+- 作業ブランチ: `feat/0002-nuclei-engine`
+- PR #1（ADR-0001 + CI）/ PR #2（DBスキーマ）/ PR #3（ADR-0005 river）: **マージ済み**
+- 進行中: ADR-0002 Nuclei SDK 統合（`worker/internal/engine/` 実装 + `Work()` 差込）
+- sqlc: **v1.31.1** / river: **v0.39.0** / **Nuclei SDK: v3.9.0（go.mod 固定）**
 - モジュール構成: api / worker / **jobs（共有ジョブ契約・依存ゼロ）** の3モジュール（go.work + replace）
 - リモート: `ymd38/goodast`（**private**）
 - ブランチ戦略: 2-tier（feature → main、PR経由）
@@ -29,7 +29,7 @@
 - [x] ADR-0001 api/worker プロセス分離（go.work + 2モジュール）
 - [x] Day-1 運用規約（slog / dig / config / pgxpool / graceful shutdown / health）
 - [x] GitHub Actions（CI matrix / security-scan / PR Agent）
-- [ ] Makefile（`make dev-api` 等の想定ターゲット）
+- [x] Makefile（`make help` で一覧。db/migrate/sqlc/dev/test/lint/cover/juiceshop/nuclei-scan）
 
 ### 実装
 - [x] DBスキーマ: `migrations/000001_initial_schema` + sqlc セットアップ（企画書 §5）
@@ -41,7 +41,13 @@
   - api: `EnqueueScan`（scan行作成 + river InsertTx を1txで atomic enqueue）+ insert-only client
   - worker: `ScanWorker`（queued→running→done のスタブ遷移。Nuclei は ADR-0002 で差込）+ graceful Stop
   - 結合テスト（//go:build integration）で enqueue→process→done / atomic enqueue を検証
-- [ ] ADR-0002 Nuclei SDK 統合（`worker/internal/engine/` の Work() に差込）
+- [x] ADR-0002 Nuclei SDK 統合（`worker/internal/engine/` の Work() に差込）
+  - engine 純粋層（`engine.go` interface / `scope.go` allowlist・危険パス・所有確認 / `severity.go` 正規化 / `summary.go` 集計）= **unit 100%**
+  - `engine/nuclei/` に Nuclei v3.9.0 SDK アダプタを隔離（scope filter・保守的レート・severity フィルタ・破壊的タグ除外・sandbox=ローカルファイル禁止）。`//go:build integration` で検証、coverage 除外
+  - `GetScanTarget`（scans⨝sites）クエリ追加 + sqlc 再生成
+  - `Work()` 差替: GetScanTarget → 所有確認 defense-in-depth（ADR-0004）→ engine.Scan → findings 保存 → summary_json → CompleteScan、設定不備は FailScan
+  - 結合テスト（throwaway PG）で done+findings保存・resume冪等・未確認public→failed を検証
+  - **未認証スキャンのみ**。session 認証（Cookie/Bearer 持込）の復号・注入は ADR-0003 へ分離
 - [ ] スキャン開始 HTTP エンドポイント（scan feature・EnqueueScan を呼ぶ）
 - [ ] ADR-0004 ドメイン所有確認（ファイル設置 / DNS TXT）
 - [ ] ADR-0003 認証情報のアプリ層暗号化（`scan_credentials.enc_headers`）
@@ -95,13 +101,35 @@
 > 結合テストで「unverified→拒否・localhost→許可」「running→再開して done」を検証済み。
 > **worker 側の所有確認 defense-in-depth は ADR-0002 に持ち越し**（worker が site をロードして実スキャンする時に再チェック）。
 
+### PR #4（ADR-0002 Nuclei engine）レビュー backlog（Qodo）
+
+| ID | 指摘 | 判定 / 対応 |
+|---|---|---|
+| Q-4 | 実行失敗で scan が running 固定 | ✅ 最終試行（`job.Attempt>=MaxAttempts`）で `FailScan` 確定。それ以外は再試行 |
+| Q-5 | リトライで findings 重複 | ✅ 実行前に `DeleteFindingsByScan` で掃除し再実行を冪等化。結合テストで検証 |
+| Q-7 | `markFailed` がDB失敗を握り潰す | ✅ `markFailed` を error 返却化、失敗時は error を返し running 放置を防ぐ |
+| Q-8 | Scope がポート未考慮 | ✅ allowlist を host:port（scheme既定で補完）一致に厳格化。unit 100% |
+| Q-2 | 危険パスが結果フィルタのみ | ⚠️ 一部対応: `intrusive` タグ除外を追加（dosに加え）。per-request パス遮断は SDK 非対応のため**クロール/認証フェーズへ持ち越し**（下記） |
+| Q-6 | スコープ強制がリクエスト時でない | ⚠️ 同上。`WithOptions` は opts 全置換で不可。post-filter を defense-in-depth として維持 |
+| Q-1 | ParseSeverity が severity 改変 | ❌ 反論: DB CHECK が `Critical/High/..` 固定。値は1:1保持・大小文字正規化のみ、`unknown`→`Info` は schema 都合の安全コアース |
+| Q-3 | CLI parity / 認証スキャン比較テストなし | ❌ 反論: §10 はプロジェクト DoD。認証スキャンは ADR-0003 未実装で本PR範囲外。検知精度検証は専用タスク |
+
+> **持ち越し（重要）**: リクエスト時の host/path 厳密遮断は、単一ターゲット・非クロール（katana無効）・
+> DAST fuzzing 無効の現状では逸脱の主経路が限定的。クロール/認証スキャン導入時にカスタム
+> transport / redirect ポリシーで実装する（その時点で初めて必要十分になる）。
+
 ---
 
 ## 直近のアクション（resume ポイント）
 
-1. `feat/0005-river-job-queue` の PR 作成 → CI / PR Agent 確認 → マージ
-2. マージ後、**ADR-0002 Nuclei SDK 統合**（`worker/internal/engine/` を実装し ScanWorker.Work() のスタブと差し替え）
-3. 並行して **site feature**（サイト登録 + ドメイン所有確認 ADR-0004）、**scan 開始エンドポイント**
+1. `feat/0002-nuclei-engine` の PR 作成 → CI / PR Agent 確認 → マージ
+2. **site feature**（サイト登録 + ドメイン所有確認 ADR-0004）、**scan 開始 HTTP エンドポイント**（`EnqueueScan` を呼ぶ）
+3. **ADR-0003 認証情報のアプリ層暗号化** → ここで worker に credential ロード＋復号＋ヘッダ注入（`engine.ScanRequest` にヘッダ受け口を追加し session スキャンを通す）
+4. Juice Shop で検知精度の検証（Nuclei CLI ベースライン vs goodast）: `NUCLEI_TEST_TARGET=http://localhost:3000` で `engine/nuclei` の integration テスト実行
+
+### ADR-0002 の持ち越し / 留意点
+- **nuclei-templates の取得は未実装**（SDK は既定 catalog 依存）。`make setup` / worker 起動時に固定バージョンを取得する配線は別途（企画書 §12「テンプレート配布」）。`engine/nuclei` の integration テストはテンプレート導入済みを前提にスキップ可能化済み
+- engine のレート/severity/除外タグは現状 `nuclei.DefaultConfig()` のコード定数。運用調整値（レート等）の env 化は必要になった時点で `config` に追加
 
 ## メモ（運用）
 
@@ -112,7 +140,8 @@
 - 結合テスト実行: DB へ migrate 後 `TEST_DATABASE_URL=... go test -tags=integration ./...`
 - ローカル lint は CI と同じ `golangci-lint v2.12.2` を使う。go 1.26.4 ターゲットを lint するには
   リンタも 1.26.4 でビルドする必要がある: `GOTOOLCHAIN=go1.26.4 go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2`
-- Makefile（`make migrate` / `make sqlc` 等）は未整備（TODO）
+- Makefile 整備済み（`make help`）。Juice Shop は `make juiceshop-up`（compose profile・loopback :3001）、
+  実スキャン確認は `make nuclei-scan`（`NUCLEI_TEST_TARGET` / `NUCLEI_TEST_TAGS`）。テンプレ取得は `make nuclei-templates`
 
 ---
 
