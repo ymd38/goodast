@@ -48,10 +48,14 @@
   - `Work()` 差替: GetScanTarget → 所有確認 defense-in-depth（ADR-0004）→ engine.Scan → findings 保存 → summary_json → CompleteScan、設定不備は FailScan
   - 結合テスト（throwaway PG）で done+findings保存・resume冪等・未確認public→failed を検証
   - **未認証スキャンのみ**。session 認証（Cookie/Bearer 持込）の復号・注入は ADR-0003 へ分離
-- [ ] スキャン開始 HTTP エンドポイント（scan feature・EnqueueScan を呼ぶ）
-- [ ] ADR-0004 ドメイン所有確認（ファイル設置 / DNS TXT）
+- [ ] スキャン開始 HTTP エンドポイント（scan feature・EnqueueScan を呼ぶ）※次PR
+- [x] ADR-0004 ドメイン所有確認（ファイル設置 / DNS TXT）+ サイト登録 API
+  - 共有 `api/internal/target/`（IsLocalTarget / RequiresOwnershipVerification）に集約し scan の私有コピーを DRY 化。unit 100%
+  - `api/internal/site/`（types: VerifyMethod/VerifyToken、verify: Verifier〈file/DNS・注入可〉、repository、service）。純粋層 unit 100%
+  - `api/internal/handler/site.go`: `POST /sites`（登録+トークン+設置ガイド）/ `GET /sites` / `GET /sites/:id` / `POST /sites/:id/verify`。ローカルは確認スキップ即 verified
+  - main.go DI 配線 + ルート登録。HTTP フロー結合テスト（throwaway PG + fake verifier）で全経路検証
 - [ ] ADR-0003 認証情報のアプリ層暗号化（`scan_credentials.enc_headers`）
-- [ ] サイト登録 / スキャン受付 API（site / scan feature）
+- [ ] スキャン受付 API 完成（scan 開始エンドポイント）
 - [ ] スコア計算（`internal/report`）
 - [ ] web (Nuxt) スキャフォールド → CI の frontend / pnpm-audit ジョブ有効化
 - [ ] ダッシュボード（スコア + 時系列・Chart.js）
@@ -122,10 +126,10 @@
 
 ## 直近のアクション（resume ポイント）
 
-1. `feat/0002-nuclei-engine` の PR 作成 → CI / PR Agent 確認 → マージ
-2. **site feature**（サイト登録 + ドメイン所有確認 ADR-0004）、**scan 開始 HTTP エンドポイント**（`EnqueueScan` を呼ぶ）
-3. **ADR-0003 認証情報のアプリ層暗号化** → ここで worker に credential ロード＋復号＋ヘッダ注入（`engine.ScanRequest` にヘッダ受け口を追加し session スキャンを通す）
-4. Juice Shop で検知精度の検証（Nuclei CLI ベースライン vs goodast）: `NUCLEI_TEST_TARGET=http://localhost:3000` で `engine/nuclei` の integration テスト実行
+1. `feat/0004-site-ownership-verification` の PR 作成 → CI / PR Agent 確認 → マージ（ADR-0002 はマージ済み）
+2. **scan 開始 HTTP エンドポイント**（`POST /scans`・既存 `scan.Service.EnqueueScan` を handler で接続）→ これで「登録→確認→スキャン開始」が API で一気通貫
+3. **ADR-0003 認証情報のアプリ層暗号化** → worker に credential ロード＋復号＋ヘッダ注入（`engine.ScanRequest` にヘッダ受け口を追加し session スキャンを通す）
+4. Juice Shop で検知精度の検証（Nuclei CLI ベースライン vs goodast）: `make juiceshop-up` → `NUCLEI_TEST_TARGET=http://localhost:3001 make nuclei-scan`
 
 ### ADR-0002 の持ち越し / 留意点
 - **nuclei-templates の取得は未実装**（SDK は既定 catalog 依存）。`make setup` / worker 起動時に固定バージョンを取得する配線は別途（企画書 §12「テンプレート配布」）。`engine/nuclei` の integration テストはテンプレート導入済みを前提にスキップ可能化済み
