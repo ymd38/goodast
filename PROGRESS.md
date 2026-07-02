@@ -168,7 +168,8 @@
 
 ### ADR-0002 の持ち越し / 留意点
 - **nuclei-templates の取得は未実装**（SDK は既定 catalog 依存）。`make setup` / worker 起動時に固定バージョンを取得する配線は別途（企画書 §12「テンプレート配布」）。`engine/nuclei` の integration テストはテンプレート導入済みを前提にスキップ可能化済み
-- **【未決】nuclei の同梱先（要ユーザー確認）**: api コンテナへの同梱案が出たが ADR-0002（SDK は worker のみ・api/worker 別イメージ）と衝突。推奨は「**nuclei SDK は既に worker バイナリに静的リンク済み。実際に焼くのは nuclei-templates（データ）を worker イメージに固定版で同梱**、api には入れない」。parity ベースライン用 CLI は別レイヤーの関心事で、現状 `go run @go.mod版`（SDK とバージョン一致）。速度/再現性が要れば専用 test/CI イメージに pinned CLI を焼く。※ api/worker Dockerfile は未作成（docker-compose は `build:` 参照のみ）
+- **【決定 2026-07-02】nuclei バイナリ/CLI はどのコンテナにも同梱しない**: nuclei は SDK として worker の Go バイナリに静的リンク済みで、実行時に別途 nuclei バイナリは不要。CLI は parity 検証（`make nuclei-parity`）のベースライン比較でのみ `go run @go.mod版`（SDK とバージョン一致）として使い、goodast ランタイムには不要。api への同梱案は ADR-0002 と衝突するため不採用。
+  - ただし **nuclei-templates（データ）** は別件。SDK が scan 時に参照するため、固定版取得・worker への同梱は未実装のまま（§12「テンプレート配布」）。api/worker Dockerfile も未作成（docker-compose は `build:` 参照のみ）
 - engine のレート/severity/除外タグは現状 `nuclei.DefaultConfig()` のコード定数。運用調整値（レート等）の env 化は必要になった時点で `config` に追加
 
 ## メモ（運用）
