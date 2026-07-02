@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -34,10 +35,12 @@ import (
 // 絞った集合を正とする。
 //
 // 判定の粒度（フレーク耐性）:
-//   - ハード fail: ベースラインが検出した「スコープ内 template-id」を goodast が1つでも欠くこと
-//     （＝脆弱性クラスの取りこぼし）。ステートフルな対象への2回の独立スキャンでは matched-URL 単位や
-//     件数の完全一致は保証しにくいため、DoD の中核は template-id 集合の包含で担保する。
-//   - レポートのみ: URL 単位の差分・件数・severity 分布・goodast 側 extra を t.Logf に出す。
+//   - ハード fail:
+//     (1) ベースラインが検出した「スコープ内 template-id」を goodast が1つでも欠くこと（脆弱性クラスの取りこぼし）。
+//     (2) 共有 template-id で severity が食い違うこと。同一テンプレ由来なので severity は決定的に一致すべき。
+//     (3) ベースラインの実行失敗・タイムアウト・in-scope 0 件（比較の土台＝正解が無く、素通りを防ぐ）。
+//   - レポートのみ: findings 件数・URL 多重度。ステートフルな対象への2回の独立スキャンでは
+//     件数・matched-URL 単位の完全一致は非決定的なため、DoD の中核は template-id 集合の包含＋severity 一致に置く。
 func TestNucleiCLIParity(t *testing.T) {
 	target := os.Getenv("NUCLEI_TEST_TARGET")
 	if target == "" {
@@ -47,7 +50,7 @@ func TestNucleiCLIParity(t *testing.T) {
 	if tags == "" {
 		tags = "misconfig,tech"
 	}
-	tagList := strings.Split(tags, ",")
+	tagList := splitTags(t, tags)
 
 	scope, err := engine.NewScope(target)
 	if err != nil {
@@ -75,17 +78,31 @@ func TestNucleiCLIParity(t *testing.T) {
 	}
 	t.Logf("baseline in-scope: %d findings", len(inScope))
 
-	// --- template-id 単位の欠落判定（ハード）---
+	// in-scope が空だと missing が常に空になり検証が素通りする（正解＝ベースラインが無い）。
+	// 実行失敗・テンプレ未導入・タイムアウト時の false-pass を防ぐため明示的に fail する。
+	if len(inScope) == 0 {
+		t.Fatalf("baseline produced no in-scope findings (raw=%d); 欠落ゼロ を検証できない — templates/target/tags を確認", len(baseline))
+	}
+
+	// --- template-id 単位の欠落判定 + severity 一致判定（ハード）---
 	goodastTemplates := templateSet(goodast)
+	goodastSevByID := severityByTemplate(goodast)
 	baselineTemplates := map[string]bool{}
-	var missing []string
+	var missing, sevMismatch []string
 	for _, f := range inScope {
 		baselineTemplates[f.TemplateID] = true
 		if !goodastTemplates[f.TemplateID] {
 			missing = append(missing, f.TemplateID)
+			continue
+		}
+		// 共有 template-id は同一テンプレ由来。severity は決定的に一致すべき。
+		if want := engine.ParseSeverity(f.Info.Severity); goodastSevByID[f.TemplateID] != want {
+			sevMismatch = append(sevMismatch, fmt.Sprintf("%s: goodast=%s baseline=%s",
+				f.TemplateID, goodastSevByID[f.TemplateID], want))
 		}
 	}
 	missing = dedupSorted(missing)
+	sevMismatch = dedupSorted(sevMismatch)
 
 	// --- レポート: severity 分布・distinct template-id・extra ---
 	logSeverityDistribution(t, "goodast", goodastSeverities(goodast))
@@ -101,6 +118,10 @@ func TestNucleiCLIParity(t *testing.T) {
 	if len(missing) > 0 {
 		t.Errorf("欠落ゼロ 違反: baseline がスコープ内で検出した %d 個の template-id を goodast が欠いています:\n  %s",
 			len(missing), strings.Join(missing, "\n  "))
+	}
+	if len(sevMismatch) > 0 {
+		t.Errorf("severity 不一致 (%d 件): 共有 template-id で goodast と baseline の severity が食い違っています:\n  %s",
+			len(sevMismatch), strings.Join(sevMismatch, "\n  "))
 	}
 }
 
@@ -176,9 +197,14 @@ func runNucleiCLIBaseline(t *testing.T, target string, tags []string, cfg nuclei
 
 	cmd := exec.CommandContext(ctx, "go", args...)
 	cmd.Stderr = os.Stderr // 進捗・エラーはそのまま流す（findings は export ファイル側）
-	if err := cmd.Run(); err != nil && ctx.Err() == nil {
-		// 検出0件でも exit 0。非0はテンプレ未導入・引数不正等の実行失敗を示すため fail。
-		t.Fatalf("nuclei CLI baseline failed: %v", err)
+	err := cmd.Run()
+	// タイムアウト/キャンセルは「正解が未完成」を意味する。空 baseline での素通りを防ぐため fail する。
+	if ctx.Err() != nil {
+		t.Fatalf("nuclei CLI baseline timed out/cancelled (%v); NUCLEI_TEST_TAGS を絞るかタイムアウトを延ばす", ctx.Err())
+	}
+	// 検出0件でも exit 0。非0はテンプレ未導入・引数不正等の実行失敗を示すため fail。
+	if err != nil {
+		t.Fatalf("nuclei CLI baseline failed: %v (args: go %s)", err, strings.Join(args, " "))
 	}
 	return parseJSONL(t, exportPath)
 }
@@ -211,6 +237,30 @@ func parseJSONL(t *testing.T, path string) []cliFinding {
 	}
 	if err := sc.Err(); err != nil {
 		t.Fatalf("scan baseline jsonl: %v", err)
+	}
+	return out
+}
+
+// splitTags は CSV タグを trim し空要素を除いて返す。空白混入（"a, b"）での不正タグを防ぐ。
+func splitTags(t *testing.T, csv string) []string {
+	t.Helper()
+	var out []string
+	for _, s := range strings.Split(csv, ",") {
+		if s = strings.TrimSpace(s); s != "" {
+			out = append(out, s)
+		}
+	}
+	if len(out) == 0 {
+		t.Fatalf("NUCLEI_TEST_TAGS に有効なタグがありません: %q", csv)
+	}
+	return out
+}
+
+// severityByTemplate は template-id → 正規化 severity の対応を返す（同一テンプレは同一 severity）。
+func severityByTemplate(findings map[string]engine.Finding) map[string]engine.Severity {
+	out := map[string]engine.Severity{}
+	for _, f := range findings {
+		out[f.TemplateID] = f.Severity
 	}
 	return out
 }

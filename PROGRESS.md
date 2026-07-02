@@ -151,6 +151,15 @@
 | B1 | `ShouldBindJSON` がボディサイズ上限なし（巨大 JSON でリソース枯渇） | ✅ `handler.BodyLimit`（`http.MaxBytesReader`）を router 全ルートに適用（1MiB）。既存 `/sites` 系も同時に保護。unit テストで上限内/超過の両分岐を検証 |
 | （PR Agent）Ticket 0005 部分準拠 | ⏭️ 誤検知。存在しない Issue 番号をブランチ名から拾い、マージ済み PR #5 の要件と比較していた |
 
+### PR #7（nuclei CLI parity）レビュー backlog（Qodo）
+
+| ID | 指摘 | 対応 |
+|---|---|---|
+| P3 | ベースライン CLI のタイムアウト/失敗を握り潰し空 baseline で素通り（Bug） | ✅ `ctx.Err()!=nil` は fatal 化・失敗時に args ログ。加えて **in-scope 0 件を fatal**（正解が無い状態での vacuous pass を防止） |
+| P4 | `NUCLEI_TEST_TAGS` の空白未トリムで不正タグ混入（Bug） | ✅ `splitTags` で trim + 空要素除去、空なら fatal |
+| P2 | severity/件数を assert せずレポートのみ（Rule 13） | ✅ 共有 template-id の **severity-per-template を hard assert**（同一テンプレ由来で決定的）。生件数は URL 多重度で非決定的なため report 維持（理由を明記） |
+| P1 | 認証スキャン未実施（Rule 13 / §10-3） | ⏭️ 先送り。ヘッダ注入は ADR-0003 未実装（`engine.ScanRequest` にヘッダ受け口が無い）。ADR-0003 完了後に本テストへ追加 |
+
 ## 直近のアクション（resume ポイント）
 
 1. `test/0006-nuclei-cli-parity` の PR 作成 → マージ
@@ -159,6 +168,7 @@
 
 ### ADR-0002 の持ち越し / 留意点
 - **nuclei-templates の取得は未実装**（SDK は既定 catalog 依存）。`make setup` / worker 起動時に固定バージョンを取得する配線は別途（企画書 §12「テンプレート配布」）。`engine/nuclei` の integration テストはテンプレート導入済みを前提にスキップ可能化済み
+- **【未決】nuclei の同梱先（要ユーザー確認）**: api コンテナへの同梱案が出たが ADR-0002（SDK は worker のみ・api/worker 別イメージ）と衝突。推奨は「**nuclei SDK は既に worker バイナリに静的リンク済み。実際に焼くのは nuclei-templates（データ）を worker イメージに固定版で同梱**、api には入れない」。parity ベースライン用 CLI は別レイヤーの関心事で、現状 `go run @go.mod版`（SDK とバージョン一致）。速度/再現性が要れば専用 test/CI イメージに pinned CLI を焼く。※ api/worker Dockerfile は未作成（docker-compose は `build:` 参照のみ）
 - engine のレート/severity/除外タグは現状 `nuclei.DefaultConfig()` のコード定数。運用調整値（レート等）の env 化は必要になった時点で `config` に追加
 
 ## メモ（運用）
