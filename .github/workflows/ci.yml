@@ -19,7 +19,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  # api / worker は別 Go モジュール（ADR-0001）。matrix で個別に検証する。
+  # api / worker / secrets は別 Go モジュール（ADR-0001 / ADR-0003）。matrix で個別に検証する。
+  # secrets は依存ゼロで go.sum を持たないため、cache キーは全モジュール共通の go.mod を使う。
   backend:
     name: Backend (${{ matrix.module }})
     runs-on: ubuntu-latest
@@ -27,7 +28,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        module: [api, worker]
+        module: [api, worker, secrets]
     defaults:
       run:
         working-directory: ${{ matrix.module }}
@@ -38,7 +39,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: ${{ matrix.module }}/go.mod
-          cache-dependency-path: ${{ matrix.module }}/go.sum
+          cache-dependency-path: ${{ matrix.module }}/go.mod
 
       - name: go mod tidy check
         run: |
