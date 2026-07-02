@@ -56,6 +56,7 @@ func run() error {
 		site.DefaultVerifier,
 		site.NewService,
 		handler.NewSiteHandler,
+		handler.NewScanHandler,
 		newRouter,
 		newServer,
 	}
@@ -100,6 +101,7 @@ type routerDeps struct {
 	dig.In
 	Pool   *pgxpool.Pool
 	Site   *handler.SiteHandler
+	Scan   *handler.ScanHandler
 	Logger *slog.Logger
 }
 
@@ -110,6 +112,7 @@ func newRouter(d routerDeps) *gin.Engine {
 
 	// feature ハンドラのルート登録。
 	d.Site.RegisterRoutes(r)
+	d.Scan.RegisterRoutes(r)
 
 	// liveness: プロセス死活のみ。DB は見ない。
 	r.GET("/healthz", func(c *gin.Context) {

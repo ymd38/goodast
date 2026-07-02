@@ -4,16 +4,16 @@
 > **新しいセッションはまずこのファイルを読み、現在地・次アクションを把握する。**
 > **各作業の区切りでこのファイルを更新する。** 決定の経緯は `MEMORY.md`、要件/フェーズは `docs/poc-plan.md` を正とする。
 
-最終更新: 2026-06-30
+最終更新: 2026-07-02
 
 ---
 
 ## 現在地スナップショット
 
 - フェーズ: **PoC Phase 1**
-- 作業ブランチ: `feat/0002-nuclei-engine`
-- PR #1（ADR-0001 + CI）/ PR #2（DBスキーマ）/ PR #3（ADR-0005 river）: **マージ済み**
-- 進行中: ADR-0002 Nuclei SDK 統合（`worker/internal/engine/` 実装 + `Work()` 差込）
+- 作業ブランチ: `feat/0005-scan-start-endpoint`
+- PR #1（ADR-0001 + CI）/ PR #2（DBスキーマ）/ PR #3（ADR-0005 river）/ PR #4（ADR-0002 Nuclei engine）/ PR #5（ADR-0004 site 所有確認）: **マージ済み**
+- 進行中: スキャン開始 HTTP エンドポイント（`POST /scans`）→ 実装・テスト完了、PR 作成待ち
 - sqlc: **v1.31.1** / river: **v0.39.0** / **Nuclei SDK: v3.9.0（go.mod 固定）**
 - モジュール構成: api / worker / **jobs（共有ジョブ契約・依存ゼロ）** の3モジュール（go.work + replace）
 - リモート: `ymd38/goodast`（**private**）
@@ -48,14 +48,17 @@
   - `Work()` 差替: GetScanTarget → 所有確認 defense-in-depth（ADR-0004）→ engine.Scan → findings 保存 → summary_json → CompleteScan、設定不備は FailScan
   - 結合テスト（throwaway PG）で done+findings保存・resume冪等・未確認public→failed を検証
   - **未認証スキャンのみ**。session 認証（Cookie/Bearer 持込）の復号・注入は ADR-0003 へ分離
-- [ ] スキャン開始 HTTP エンドポイント（scan feature・EnqueueScan を呼ぶ）※次PR
+- [x] スキャン開始 HTTP エンドポイント（scan feature・EnqueueScan を呼ぶ）
+  - `handler/scan.go`: `POST /scans`（`site_id` 受付 → EnqueueScan → **202 Accepted** + scan_id/status=queued）
+  - エラー翻訳: 404（site 不在）/ **403**（所有確認未完了・ADR-0004 ガードレール。verify で解消可能な前提条件不足）/ 400（不正 uuid・body 欠落）/ 500（内部・ログ出力）
+  - main.go DI 配線 + ルート登録。`writeScanError` は unit（テーブル駆動）、HTTP フローは結合テスト（throwaway PG + insert-only river client）で 202/403/404/400 全経路 + river_job 投入を検証
 - [x] ADR-0004 ドメイン所有確認（ファイル設置 / DNS TXT）+ サイト登録 API
   - 共有 `api/internal/target/`（IsLocalTarget / RequiresOwnershipVerification）に集約し scan の私有コピーを DRY 化。unit 100%
   - `api/internal/site/`（types: VerifyMethod/VerifyToken、verify: Verifier〈file/DNS・注入可〉、repository、service）。純粋層 unit 100%
   - `api/internal/handler/site.go`: `POST /sites`（登録+トークン+設置ガイド）/ `GET /sites` / `GET /sites/:id` / `POST /sites/:id/verify`。ローカルは確認スキップ即 verified
   - main.go DI 配線 + ルート登録。HTTP フロー結合テスト（throwaway PG + fake verifier）で全経路検証
 - [ ] ADR-0003 認証情報のアプリ層暗号化（`scan_credentials.enc_headers`）
-- [ ] スキャン受付 API 完成（scan 開始エンドポイント）
+- [x] スキャン受付 API 完成（scan 開始エンドポイント）※上記 `POST /scans` で完了。session 認証持込は ADR-0003 側
 - [ ] スコア計算（`internal/report`）
 - [ ] web (Nuxt) スキャフォールド → CI の frontend / pnpm-audit ジョブ有効化
 - [ ] ダッシュボード（スコア + 時系列・Chart.js）
@@ -137,10 +140,9 @@
 
 ## 直近のアクション（resume ポイント）
 
-1. `feat/0004-site-ownership-verification` の PR 作成 → CI / PR Agent 確認 → マージ（ADR-0002 はマージ済み）
-2. **scan 開始 HTTP エンドポイント**（`POST /scans`・既存 `scan.Service.EnqueueScan` を handler で接続）→ これで「登録→確認→スキャン開始」が API で一気通貫
-3. **ADR-0003 認証情報のアプリ層暗号化** → worker に credential ロード＋復号＋ヘッダ注入（`engine.ScanRequest` にヘッダ受け口を追加し session スキャンを通す）
-4. Juice Shop で検知精度の検証（Nuclei CLI ベースライン vs goodast）: `make juiceshop-up` → `NUCLEI_TEST_TARGET=http://localhost:3001 make nuclei-scan`
+1. `feat/0005-scan-start-endpoint` の PR 作成 → CI / PR Agent 確認 → マージ。これで「登録→確認→スキャン開始」が API で一気通貫
+2. **ADR-0003 認証情報のアプリ層暗号化** → worker に credential ロード＋復号＋ヘッダ注入（`engine.ScanRequest` にヘッダ受け口を追加し session スキャンを通す）
+3. Juice Shop で検知精度の検証（Nuclei CLI ベースライン vs goodast）: `make juiceshop-up` → `NUCLEI_TEST_TARGET=http://localhost:3001 make nuclei-scan`
 
 ### ADR-0002 の持ち越し / 留意点
 - **nuclei-templates の取得は未実装**（SDK は既定 catalog 依存）。`make setup` / worker 起動時に固定バージョンを取得する配線は別途（企画書 §12「テンプレート配布」）。`engine/nuclei` の integration テストはテンプレート導入済みを前提にスキップ可能化済み
