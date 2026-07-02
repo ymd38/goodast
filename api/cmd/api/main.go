@@ -56,6 +56,7 @@ func run() error {
 		site.DefaultVerifier,
 		site.NewService,
 		handler.NewSiteHandler,
+		handler.NewScanHandler,
 		newRouter,
 		newServer,
 	}
@@ -100,16 +101,23 @@ type routerDeps struct {
 	dig.In
 	Pool   *pgxpool.Pool
 	Site   *handler.SiteHandler
+	Scan   *handler.ScanHandler
 	Logger *slog.Logger
 }
+
+// maxRequestBodyBytes は全ルート共通のリクエストボディ上限（1MiB）。
+// 現状の API は小さな JSON しか受けないため保守的に絞る。
+const maxRequestBodyBytes = 1 << 20
 
 func newRouter(d routerDeps) *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
 	r.Use(gin.Recovery())
+	r.Use(handler.BodyLimit(maxRequestBodyBytes))
 
 	// feature ハンドラのルート登録。
 	d.Site.RegisterRoutes(r)
+	d.Scan.RegisterRoutes(r)
 
 	// liveness: プロセス死活のみ。DB は見ない。
 	r.GET("/healthz", func(c *gin.Context) {
