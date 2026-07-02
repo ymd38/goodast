@@ -103,3 +103,8 @@ nuclei-templates: ## nuclei-templates を固定版で取得・更新する（版
 nuclei-scan: ## 対象へ実スキャン結合テスト（NUCLEI_TEST_TARGET / NUCLEI_TEST_TAGS）
 	cd worker && NUCLEI_TEST_TARGET="$(NUCLEI_TEST_TARGET)" \
 		go test -tags=integration -v -timeout 8m -run TestNucleiEngineScan ./internal/engine/nuclei/
+
+.PHONY: nuclei-parity
+nuclei-parity: ## 検知精度 検証: Nuclei CLI ベースライン vs goodast の欠落ゼロ突合（要 make juiceshop-up）
+	cd worker && NUCLEI_TEST_TARGET="$(NUCLEI_TEST_TARGET)" NUCLEI_TEST_TAGS="$(NUCLEI_TEST_TAGS)" \
+		go test -tags=integration -v -timeout 25m -run TestNucleiCLIParity ./internal/engine/nuclei/

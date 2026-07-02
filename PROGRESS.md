@@ -11,7 +11,7 @@
 ## 現在地スナップショット
 
 - フェーズ: **PoC Phase 1**
-- 作業ブランチ: なし（`main`。次タスク着手時にブランチを切る）
+- 作業ブランチ: `test/0006-nuclei-cli-parity`（検知精度 検証）
 - PR #1（ADR-0001 + CI）/ PR #2（DBスキーマ）/ PR #3（ADR-0005 river）/ PR #4（ADR-0002 Nuclei engine）/ PR #5（ADR-0004 site 所有確認）/ PR #6（scan 開始エンドポイント）: **マージ済み**
 - これで「サイト登録 → 所有確認 → スキャン開始」が API で一気通貫
 - 次: **ADR-0003 認証情報のアプリ層暗号化**（下記「直近のアクション」参照）
@@ -60,6 +60,11 @@
   - main.go DI 配線 + ルート登録。HTTP フロー結合テスト（throwaway PG + fake verifier）で全経路検証
 - [ ] ADR-0003 認証情報のアプリ層暗号化（`scan_credentials.enc_headers`）
 - [x] スキャン受付 API 完成（scan 開始エンドポイント）※上記 `POST /scans` で完了。session 認証持込は ADR-0003 側
+- [x] 検知精度 検証（§10）: Nuclei CLI ベースライン vs goodast の「欠落ゼロ」突合
+  - `worker/internal/engine/nuclei/parity_integration_test.go`（`TestNucleiCLIParity`・`//go:build integration`）+ `make nuclei-parity`
+  - CLI ベースラインに goodast の `DefaultConfig` と同一フィルタ（tags / exclude dos,intrusive / rate 10/s）を適用し、`scope.Allows` で絞った集合を正とする。判定は template-id 集合の包含（欠落ゼロ）で担保（URL 多重度・件数の完全一致はステートフル対象で非決定的なためレポートのみ）
+  - **結果（Juice Shop @localhost:3001・tags=misconfig,tech・nuclei v3.9.0）: PASS。distinct template-id 一致（goodast=4 / baseline in-scope=4・欠落0）**。検出: `fingerprinthub-web-fingerprints` / `http-missing-security-headers` / `owasp-juice-shop-detect` / `tech-detect`。findings 件数差（goodast 4 / baseline 13）は同一テンプレの URL 多重度による
+  - **未認証スキャンのみ**。認証後スキャン（Cookie 持込で finding 増）の検証は ADR-0003 実装後（§10-3）
 - [ ] スコア計算（`internal/report`）
 - [ ] web (Nuxt) スキャフォールド → CI の frontend / pnpm-audit ジョブ有効化
 - [ ] ダッシュボード（スコア + 時系列・Chart.js）
@@ -148,8 +153,9 @@
 
 ## 直近のアクション（resume ポイント）
 
-1. **ADR-0003 認証情報のアプリ層暗号化** → api に credential 受付＋暗号化保存（`scan_credentials.enc_headers`）、worker に credential ロード＋復号＋ヘッダ注入（`engine.ScanRequest` にヘッダ受け口を追加し session スキャンを通す）
-2. Juice Shop で検知精度の検証（Nuclei CLI ベースライン vs goodast）: `make juiceshop-up` → `NUCLEI_TEST_TARGET=http://localhost:3001 make nuclei-scan`
+1. `test/0006-nuclei-cli-parity` の PR 作成 → マージ
+2. **ADR-0003 認証情報のアプリ層暗号化** → api に credential 受付＋暗号化保存（`scan_credentials.enc_headers`）、worker に credential ロード＋復号＋ヘッダ注入（`engine.ScanRequest` にヘッダ受け口を追加し session スキャンを通す）。完了後 §10-3 の認証後スキャン検証（Cookie 持込で finding 増）を parity テストに追加
+3. 検知精度 検証（未認証）は完了: `make juiceshop-up` → `make nuclei-parity`（`NUCLEI_TEST_TARGET`/`NUCLEI_TEST_TAGS` 上書き可）
 
 ### ADR-0002 の持ち越し / 留意点
 - **nuclei-templates の取得は未実装**（SDK は既定 catalog 依存）。`make setup` / worker 起動時に固定バージョンを取得する配線は別途（企画書 §12「テンプレート配布」）。`engine/nuclei` の integration テストはテンプレート導入済みを前提にスキップ可能化済み
