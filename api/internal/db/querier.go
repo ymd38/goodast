@@ -13,12 +13,18 @@ import (
 type Querier interface {
 	CreateScan(ctx context.Context, siteID pgtype.UUID) (Scan, error)
 	CreateSite(ctx context.Context, arg CreateSiteParams) (Site, error)
+	DeleteScanCredentials(ctx context.Context, siteID pgtype.UUID) error
 	GetScan(ctx context.Context, id pgtype.UUID) (Scan, error)
+	// api はステータス表示のみで復号しないため、機微な enc_headers は取得しない。
+	GetScanCredentials(ctx context.Context, siteID pgtype.UUID) (GetScanCredentialsRow, error)
 	GetSiteByID(ctx context.Context, id pgtype.UUID) (Site, error)
 	GetSiteByName(ctx context.Context, name string) (Site, error)
 	ListScansBySite(ctx context.Context, siteID pgtype.UUID) ([]Scan, error)
 	ListSites(ctx context.Context) ([]Site, error)
 	MarkSiteVerified(ctx context.Context, id pgtype.UUID) (Site, error)
+	// session 認証情報を site 単位で作成/更新する（ADR-0003）。auth_mode は session 固定。
+	// 「none」は行を作らず不在で表現するため、本クエリは session のみを扱う。
+	UpsertScanCredentials(ctx context.Context, arg UpsertScanCredentialsParams) error
 }
 
 var _ Querier = (*Queries)(nil)

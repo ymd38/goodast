@@ -25,6 +25,8 @@ web/dist/
 !.env.example
 *.pem
 *.key
+# 開発専用の暗号鍵（make dev-key がローカル生成・ADR-0003）
+.dev-encryption-key
 
 # === Nuclei テンプレート（ADR: リポジトリに含めない・起動時取得） ===
 /nuclei-templates/

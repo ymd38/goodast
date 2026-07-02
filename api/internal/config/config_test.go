@@ -2,6 +2,7 @@ package config
 
 import (
 	"log/slog"
+	"maps"
 	"testing"
 	"time"
 )
@@ -11,7 +12,7 @@ import (
 func applyEnv(t *testing.T, env map[string]string) {
 	t.Helper()
 	keys := []string{
-		"DATABASE_URL", "API_ADDR", "LOG_LEVEL",
+		"DATABASE_URL", "GOODAST_ENCRYPTION_KEY", "API_ADDR", "LOG_LEVEL",
 		"SHUTDOWN_TIMEOUT", "DB_MAX_CONNS", "DB_MIN_CONNS",
 	}
 	for _, k := range keys {
@@ -21,6 +22,14 @@ func applyEnv(t *testing.T, env map[string]string) {
 
 func TestLoad(t *testing.T) {
 	const validURL = "postgres://u:p@localhost:5432/db"
+	const validKey = "test-encryption-key" // Load は非空のみ検証（形式検証は Cipher 構築側）。
+
+	// base は必須変数（DATABASE_URL / GOODAST_ENCRYPTION_KEY）を満たす env を返す。
+	base := func(extra map[string]string) map[string]string {
+		env := map[string]string{"DATABASE_URL": validURL, "GOODAST_ENCRYPTION_KEY": validKey}
+		maps.Copy(env, extra)
+		return env
+	}
 
 	tests := []struct {
 		name    string
@@ -30,7 +39,7 @@ func TestLoad(t *testing.T) {
 	}{
 		{
 			name: "minimal applies defaults",
-			env:  map[string]string{"DATABASE_URL": validURL},
+			env:  base(nil),
 			check: func(t *testing.T, c *Config) {
 				if c.Addr != ":8080" {
 					t.Errorf("Addr = %q, want :8080", c.Addr)
@@ -44,18 +53,20 @@ func TestLoad(t *testing.T) {
 				if c.DBMaxConns != 10 || c.DBMinConns != 2 {
 					t.Errorf("pool conns = %d/%d, want 10/2", c.DBMaxConns, c.DBMinConns)
 				}
+				if c.EncryptionKey != validKey {
+					t.Errorf("EncryptionKey = %q, want %q", c.EncryptionKey, validKey)
+				}
 			},
 		},
 		{
 			name: "full custom values",
-			env: map[string]string{
-				"DATABASE_URL":     validURL,
+			env: base(map[string]string{
 				"API_ADDR":         ":9000",
 				"LOG_LEVEL":        "DEBUG",
 				"SHUTDOWN_TIMEOUT": "15s",
 				"DB_MAX_CONNS":     "20",
 				"DB_MIN_CONNS":     "5",
-			},
+			}),
 			check: func(t *testing.T, c *Config) {
 				if c.Addr != ":9000" || c.LogLevel != slog.LevelDebug ||
 					c.ShutdownTimeout != 15*time.Second || c.DBMaxConns != 20 || c.DBMinConns != 5 {
@@ -63,15 +74,16 @@ func TestLoad(t *testing.T) {
 				}
 			},
 		},
-		{name: "missing DATABASE_URL", env: map[string]string{}, wantErr: true},
-		{name: "invalid LOG_LEVEL", env: map[string]string{"DATABASE_URL": validURL, "LOG_LEVEL": "trace"}, wantErr: true},
-		{name: "invalid SHUTDOWN_TIMEOUT", env: map[string]string{"DATABASE_URL": validURL, "SHUTDOWN_TIMEOUT": "soon"}, wantErr: true},
-		{name: "non-positive SHUTDOWN_TIMEOUT", env: map[string]string{"DATABASE_URL": validURL, "SHUTDOWN_TIMEOUT": "0s"}, wantErr: true},
-		{name: "invalid DB_MAX_CONNS", env: map[string]string{"DATABASE_URL": validURL, "DB_MAX_CONNS": "lots"}, wantErr: true},
-		{name: "invalid DB_MIN_CONNS", env: map[string]string{"DATABASE_URL": validURL, "DB_MIN_CONNS": "few"}, wantErr: true},
-		{name: "max conns below one", env: map[string]string{"DATABASE_URL": validURL, "DB_MAX_CONNS": "0"}, wantErr: true},
-		{name: "negative min conns", env: map[string]string{"DATABASE_URL": validURL, "DB_MIN_CONNS": "-1"}, wantErr: true},
-		{name: "min exceeds max", env: map[string]string{"DATABASE_URL": validURL, "DB_MAX_CONNS": "2", "DB_MIN_CONNS": "5"}, wantErr: true},
+		{name: "missing DATABASE_URL", env: map[string]string{"GOODAST_ENCRYPTION_KEY": validKey}, wantErr: true},
+		{name: "missing GOODAST_ENCRYPTION_KEY", env: map[string]string{"DATABASE_URL": validURL}, wantErr: true},
+		{name: "invalid LOG_LEVEL", env: base(map[string]string{"LOG_LEVEL": "trace"}), wantErr: true},
+		{name: "invalid SHUTDOWN_TIMEOUT", env: base(map[string]string{"SHUTDOWN_TIMEOUT": "soon"}), wantErr: true},
+		{name: "non-positive SHUTDOWN_TIMEOUT", env: base(map[string]string{"SHUTDOWN_TIMEOUT": "0s"}), wantErr: true},
+		{name: "invalid DB_MAX_CONNS", env: base(map[string]string{"DB_MAX_CONNS": "lots"}), wantErr: true},
+		{name: "invalid DB_MIN_CONNS", env: base(map[string]string{"DB_MIN_CONNS": "few"}), wantErr: true},
+		{name: "max conns below one", env: base(map[string]string{"DB_MAX_CONNS": "0"}), wantErr: true},
+		{name: "negative min conns", env: base(map[string]string{"DB_MIN_CONNS": "-1"}), wantErr: true},
+		{name: "min exceeds max", env: base(map[string]string{"DB_MAX_CONNS": "2", "DB_MIN_CONNS": "5"}), wantErr: true},
 	}
 
 	for _, tt := range tests {

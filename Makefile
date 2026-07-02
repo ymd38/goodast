@@ -8,7 +8,10 @@ TEST_DATABASE_URL ?= $(DATABASE_URL)
 MIGRATE           ?= migrate
 NUCLEI_VERSION    ?= v3.9.0
 NUCLEI_TEST_TARGET ?= http://localhost:3001
-GO_MODULES        := api worker jobs
+GO_MODULES        := api worker jobs secrets
+# 開発専用の暗号鍵は各開発者のローカルにのみ生成する（リポジトリに固定鍵を置かない・ADR-0003）。
+# 本番は必ず環境変数 GOODAST_ENCRYPTION_KEY で上書きすること。
+DEV_KEY_FILE      := $(CURDIR)/.dev-encryption-key
 
 .DEFAULT_GOAL := help
 
@@ -47,8 +50,12 @@ sqlc: ## sqlc 生成コードを再生成する（api / worker）
 
 # ---- 開発起動 ----
 .PHONY: dev-api
-dev-api: ## API サーバを起動する（Gin）
-	cd api && DATABASE_URL="$(DATABASE_URL)" go run ./cmd/api
+.PHONY: dev-key
+dev-key: ## 開発専用の暗号鍵をローカル生成する（未存在時のみ・gitignore 済み）
+	@test -f "$(DEV_KEY_FILE)" || { openssl rand -base64 32 | tr -d '\n' > "$(DEV_KEY_FILE)"; echo "generated $(DEV_KEY_FILE)"; }
+
+dev-api: dev-key ## API サーバを起動する（Gin）
+	cd api && DATABASE_URL="$(DATABASE_URL)" GOODAST_ENCRYPTION_KEY="$$(cat '$(DEV_KEY_FILE)')" go run ./cmd/api
 
 .PHONY: dev-worker
 dev-worker: ## スキャンワーカーを起動する（Nuclei SDK 隔離）

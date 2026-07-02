@@ -14,6 +14,7 @@ import (
 // Config は API サーバの実行時設定。環境変数から Load で構築する。
 type Config struct {
 	DatabaseURL     string
+	EncryptionKey   string // GOODAST_ENCRYPTION_KEY（base64 32B）。認証情報の暗号化に使う（ADR-0003）。
 	Addr            string
 	ShutdownTimeout time.Duration
 	LogLevel        slog.Level
@@ -34,6 +35,12 @@ func Load() (*Config, error) {
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
 		return nil, fmt.Errorf("DATABASE_URL is required")
+	}
+
+	// 認証情報の暗号鍵は必須（ADR-0003）。鍵形式の検証は起動時の Cipher 構築に委ねる。
+	encKey := os.Getenv("GOODAST_ENCRYPTION_KEY")
+	if encKey == "" {
+		return nil, fmt.Errorf("GOODAST_ENCRYPTION_KEY is required")
 	}
 
 	level, err := parseLogLevel(getEnv("LOG_LEVEL", "info"))
@@ -69,6 +76,7 @@ func Load() (*Config, error) {
 
 	return &Config{
 		DatabaseURL:     dbURL,
+		EncryptionKey:   encKey,
 		Addr:            getEnv("API_ADDR", defaultAddr),
 		ShutdownTimeout: timeout,
 		LogLevel:        level,

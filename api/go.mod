@@ -9,6 +9,7 @@ require (
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/riverqueue/river v0.39.0
 	github.com/riverqueue/river/riverdriver/riverpgxv5 v0.39.0
+	github.com/ymd38/goodast/secrets v0.0.0-00010101000000-000000000000
 	go.uber.org/dig v1.19.0
 )
 
@@ -65,3 +66,5 @@ require (
 )
 
 replace github.com/ymd38/goodast/jobs => ../jobs
+
+replace github.com/ymd38/goodast/secrets => ../secrets

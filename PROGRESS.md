@@ -11,12 +11,12 @@
 ## 現在地スナップショット
 
 - フェーズ: **PoC Phase 1**
-- 作業ブランチ: `feat/0007-secrets-crypto`（ADR-0003 PR①）
-- PR #1〜#7 マージ済み（#7 = 検知精度 parity）。「サイト登録 → 所有確認 → スキャン開始」が API で一気通貫
+- 作業ブランチ: `feat/0008-credential-api`（ADR-0003 PR②）
+- PR #1〜#8 マージ済み（#8 = ADR-0003 PR① secrets モジュール）
 - 進行中: **ADR-0003 認証情報のアプリ層暗号化**（3段 PR）
-  - **PR① 共有 `secrets/` モジュール**（本ブランチ・完了）: AES-256-GCM / `NewCipher(base64鍵)` / `SealHeaders(h, aad=siteID)` / `OpenHeaders` / ドメイン型 `Headers`・`EncryptedHeaders`（`String()` マスク）。unit 100%
-  - PR② api: 認証情報の受付・暗号化保存（`PUT/DELETE/GET /sites/:id/credentials` + migration 000005 UNIQUE(site_id) + config 鍵）
-  - PR③ worker: 復号・ヘッダ注入（`engine.ScanRequest.Headers` + nuclei `WithHeaders` + creds ロード）
+  - **PR① 共有 `secrets/` モジュール**（#8 マージ済み）: AES-256-GCM / 版付きエンベロープ / AAD=siteID / `Headers`・`EncryptedHeaders`。unit 100%
+  - **PR② api: 認証情報の受付・暗号化保存**（本ブランチ・完了）: migration 000005 `UNIQUE(site_id)` + config `GOODAST_ENCRYPTION_KEY`（必須）+ `api/internal/credential/`（service/repository）+ `PUT/DELETE/GET /sites/:id/credentials`（暗号化 upsert・**none は行の不在**・マスク表示）。DI で Cipher を provide し鍵不正なら起動失敗。結合テストで平文リーク無し・マスク・CHECK 充足を検証
+  - PR③ worker: 復号・ヘッダ注入（`engine.ScanRequest.Headers` + nuclei `WithHeaders` + creds ロード。復号 AAD=siteID）
 - sqlc: **v1.31.1** / river: **v0.39.0** / **Nuclei SDK: v3.9.0（go.mod 固定）**
 - モジュール構成: api / worker / jobs / **secrets（認証情報暗号化・依存ゼロ・ADR-0003）** の4モジュール（go.work + replace）
 - リモート: `ymd38/goodast`（**private**）
