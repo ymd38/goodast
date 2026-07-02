@@ -138,6 +138,13 @@
 
 > gitleaks 誤検知（テスト固定 hex トークン）は `.gitleaks.toml` に exact 値 allowlist で対応済み。
 
+### PR #6（scan 開始エンドポイント）レビュー backlog（Qodo / PR Agent）
+
+| ID | 指摘 | 対応 |
+|---|---|---|
+| B1 | `ShouldBindJSON` がボディサイズ上限なし（巨大 JSON でリソース枯渇） | ✅ `handler.BodyLimit`（`http.MaxBytesReader`）を router 全ルートに適用（1MiB）。既存 `/sites` 系も同時に保護。unit テストで上限内/超過の両分岐を検証 |
+| （PR Agent）Ticket 0005 部分準拠 | ⏭️ 誤検知。存在しない Issue 番号をブランチ名から拾い、マージ済み PR #5 の要件と比較していた |
+
 ## 直近のアクション（resume ポイント）
 
 1. `feat/0005-scan-start-endpoint` の PR 作成 → CI / PR Agent 確認 → マージ。これで「登録→確認→スキャン開始」が API で一気通貫
