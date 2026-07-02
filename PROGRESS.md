@@ -11,12 +11,14 @@
 ## 現在地スナップショット
 
 - フェーズ: **PoC Phase 1**
-- 作業ブランチ: `test/0006-nuclei-cli-parity`（検知精度 検証）
-- PR #1（ADR-0001 + CI）/ PR #2（DBスキーマ）/ PR #3（ADR-0005 river）/ PR #4（ADR-0002 Nuclei engine）/ PR #5（ADR-0004 site 所有確認）/ PR #6（scan 開始エンドポイント）: **マージ済み**
-- これで「サイト登録 → 所有確認 → スキャン開始」が API で一気通貫
-- 次: **ADR-0003 認証情報のアプリ層暗号化**（下記「直近のアクション」参照）
+- 作業ブランチ: `feat/0007-secrets-crypto`（ADR-0003 PR①）
+- PR #1〜#7 マージ済み（#7 = 検知精度 parity）。「サイト登録 → 所有確認 → スキャン開始」が API で一気通貫
+- 進行中: **ADR-0003 認証情報のアプリ層暗号化**（3段 PR）
+  - **PR① 共有 `secrets/` モジュール**（本ブランチ・完了）: AES-256-GCM / `NewCipher(base64鍵)` / `SealHeaders(h, aad=siteID)` / `OpenHeaders` / ドメイン型 `Headers`・`EncryptedHeaders`（`String()` マスク）。unit 100%
+  - PR② api: 認証情報の受付・暗号化保存（`PUT/DELETE/GET /sites/:id/credentials` + migration 000005 UNIQUE(site_id) + config 鍵）
+  - PR③ worker: 復号・ヘッダ注入（`engine.ScanRequest.Headers` + nuclei `WithHeaders` + creds ロード）
 - sqlc: **v1.31.1** / river: **v0.39.0** / **Nuclei SDK: v3.9.0（go.mod 固定）**
-- モジュール構成: api / worker / **jobs（共有ジョブ契約・依存ゼロ）** の3モジュール（go.work + replace）
+- モジュール構成: api / worker / jobs / **secrets（認証情報暗号化・依存ゼロ・ADR-0003）** の4モジュール（go.work + replace）
 - リモート: `ymd38/goodast`（**private**）
 - ブランチ戦略: 2-tier（feature → main、PR経由）
 - レビュー: **PR Agent（OpenAI）** に一本化
