@@ -44,7 +44,9 @@ jobs:
       - name: go mod tidy check
         run: |
           go mod tidy
-          git diff --exit-code go.mod go.sum
+          git diff --exit-code go.mod
+          # secrets / jobs は依存ゼロで go.sum を持たない。存在する場合のみ検証する。
+          if [ -f go.sum ]; then git diff --exit-code go.sum; fi
 
       - name: Build
         run: go build ./...
