@@ -3,10 +3,19 @@ package secrets
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
 )
+
+// sealRaw は任意の平文を正規エンベロープ（version || nonce || ct+tag・version を AAD に束ねる）で
+// 暗号化する白箱ヘルパ。OpenHeaders の unmarshal / 再検証の分岐を突くために使う。
+func sealRaw(c *Cipher, plaintext, aad []byte) EncryptedHeaders {
+	nonce := bytes.Repeat([]byte{0}, c.aead.NonceSize())
+	env := append([]byte{formatVersion}, nonce...)
+	return EncryptedHeaders(c.aead.Seal(env, nonce, plaintext, versionedAAD(formatVersion, aad)))
+}
 
 // key32 は 32 バイト鍵の base64（AES-256 用）。
 func key32(t *testing.T) string {
@@ -135,12 +144,27 @@ func TestOpenHeadersFailures(t *testing.T) {
 		}
 	})
 
+	t.Run("unsupported version", func(t *testing.T) {
+		bad := append([]byte(nil), enc.Bytes()...)
+		bad[0] = 0x09 // 未知バージョン
+		if _, err := c.OpenHeaders(bad, aad); !errors.Is(err, ErrDecrypt) {
+			t.Errorf("err = %v, want ErrDecrypt", err)
+		}
+	})
+
 	t.Run("valid gcm but not headers json", func(t *testing.T) {
 		// 復号は成功するが JSON として Headers にならないケース（unmarshal エラー分岐）。
-		nonce := bytes.Repeat([]byte{0}, c.aead.NonceSize())
-		sealed := c.aead.Seal(append([]byte(nil), nonce...), nonce, []byte("42"), aad)
-		if _, err := c.OpenHeaders(sealed, aad); !errors.Is(err, ErrDecrypt) {
+		if _, err := c.OpenHeaders(sealRaw(c, []byte("42"), aad), aad); !errors.Is(err, ErrDecrypt) {
 			t.Errorf("err = %v, want ErrDecrypt", err)
+		}
+	})
+
+	t.Run("decrypts to invalid headers (fail closed)", func(t *testing.T) {
+		// 復号・JSON パースは成功するが CR/LF を含む不正ヘッダ。trust boundary の再検証で弾く。
+		pt, _ := json.Marshal(Headers{{Name: "Cookie", Value: "a\r\nInjected: 1"}})
+		_, err := c.OpenHeaders(sealRaw(c, pt, aad), aad)
+		if !errors.Is(err, ErrInvalidHeader) {
+			t.Errorf("err = %v, want ErrInvalidHeader", err)
 		}
 	})
 }

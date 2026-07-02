@@ -14,6 +14,10 @@ import (
 // keyLen は AES-256 の鍵長（バイト）。
 const keyLen = 32
 
+// formatVersion は暗号エンベロープの版（version || nonce || ct+tag）。将来の鍵/アルゴリズム
+// ローテーションを非破壊で導入できるよう先頭 1 バイトに埋め、version は AAD に束ねて改ざんを弾く。
+const formatVersion byte = 1
+
 // 暗号化のエラー。
 var (
 	// ErrInvalidKey は鍵が base64 不正・長さ不正で Cipher を構築できない。
@@ -61,19 +65,26 @@ func (c *Cipher) SealHeaders(h Headers, aad []byte) (EncryptedHeaders, error) {
 	if _, err := io.ReadFull(c.rand, nonce); err != nil {
 		return nil, fmt.Errorf("generate nonce: %w", err)
 	}
-	// Seal は dst(=nonce) の後ろに ciphertext+tag を追記する（結果 = nonce || ct+tag）。
-	return EncryptedHeaders(c.aead.Seal(nonce, nonce, plaintext, aad)), nil
+	// エンベロープ = version(1B) || nonce || ciphertext+tag。Seal は dst の後ろに ct+tag を追記する。
+	envelope := make([]byte, 0, 1+len(nonce)+len(plaintext)+c.aead.Overhead())
+	envelope = append(envelope, formatVersion)
+	envelope = append(envelope, nonce...)
+	return EncryptedHeaders(c.aead.Seal(envelope, nonce, plaintext, versionedAAD(formatVersion, aad))), nil
 }
 
 // OpenHeaders は SealHeaders の逆変換。aad は封緘時と同一でなければ復号に失敗する。
 // 鍵/AAD 不一致・改ざん・切り詰めはすべて ErrDecrypt に丸める（原因を漏らさない）。
 func (c *Cipher) OpenHeaders(enc EncryptedHeaders, aad []byte) (Headers, error) {
 	ns := c.aead.NonceSize()
-	if len(enc) < ns {
+	if len(enc) < 1+ns {
 		return nil, fmt.Errorf("%w: ciphertext too short", ErrDecrypt)
 	}
-	nonce, ct := enc[:ns], enc[ns:]
-	plaintext, err := c.aead.Open(nil, nonce, ct, aad)
+	version := enc[0]
+	if version != formatVersion {
+		return nil, fmt.Errorf("%w: unsupported format version %d", ErrDecrypt, version)
+	}
+	nonce, ct := enc[1:1+ns], enc[1+ns:]
+	plaintext, err := c.aead.Open(nil, nonce, ct, versionedAAD(version, aad))
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrDecrypt, err)
 	}
@@ -81,5 +92,15 @@ func (c *Cipher) OpenHeaders(enc EncryptedHeaders, aad []byte) (Headers, error) 
 	if err := json.Unmarshal(plaintext, &h); err != nil {
 		return nil, fmt.Errorf("%w: unmarshal: %v", ErrDecrypt, err)
 	}
+	// trust boundary の再検証（fail closed）: 復号は真正性を保証するが、旧コード・同一鍵の別書き込み・
+	// DB 改ざん由来の不正ヘッダ（CR/LF）が下流のリクエスト構築へ流れるのを防ぐ。
+	if err := h.Validate(); err != nil {
+		return nil, fmt.Errorf("decrypted headers invalid: %w", err)
+	}
 	return h, nil
+}
+
+// versionedAAD は version バイトを追加認証データの先頭に束ね、version 改ざんを GCM で検知させる。
+func versionedAAD(version byte, aad []byte) []byte {
+	return append([]byte{version}, aad...)
 }

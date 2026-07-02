@@ -50,6 +50,8 @@ func (h Headers) Validate() error {
 }
 
 // ToNucleiFormat は nuclei の WithHeaders 用に "Name: Value" 文字列スライスへ変換する。
+// 入力は検証済みである前提（SealHeaders 入口 / OpenHeaders 出口の両境界で Validate 済み）。
+// 純粋変換に留め、呼び出し側にエラー処理を強いない。
 func (h Headers) ToNucleiFormat() []string {
 	out := make([]string, 0, len(h))
 	for _, hdr := range h {
