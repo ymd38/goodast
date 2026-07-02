@@ -11,9 +11,10 @@
 ## 現在地スナップショット
 
 - フェーズ: **PoC Phase 1**
-- 作業ブランチ: `feat/0005-scan-start-endpoint`
-- PR #1（ADR-0001 + CI）/ PR #2（DBスキーマ）/ PR #3（ADR-0005 river）/ PR #4（ADR-0002 Nuclei engine）/ PR #5（ADR-0004 site 所有確認）: **マージ済み**
-- 進行中: スキャン開始 HTTP エンドポイント（`POST /scans`）→ 実装・テスト完了、PR 作成待ち
+- 作業ブランチ: なし（`main`。次タスク着手時にブランチを切る）
+- PR #1（ADR-0001 + CI）/ PR #2（DBスキーマ）/ PR #3（ADR-0005 river）/ PR #4（ADR-0002 Nuclei engine）/ PR #5（ADR-0004 site 所有確認）/ PR #6（scan 開始エンドポイント）: **マージ済み**
+- これで「サイト登録 → 所有確認 → スキャン開始」が API で一気通貫
+- 次: **ADR-0003 認証情報のアプリ層暗号化**（下記「直近のアクション」参照）
 - sqlc: **v1.31.1** / river: **v0.39.0** / **Nuclei SDK: v3.9.0（go.mod 固定）**
 - モジュール構成: api / worker / **jobs（共有ジョブ契約・依存ゼロ）** の3モジュール（go.work + replace）
 - リモート: `ymd38/goodast`（**private**）
@@ -147,9 +148,8 @@
 
 ## 直近のアクション（resume ポイント）
 
-1. `feat/0005-scan-start-endpoint` の PR 作成 → CI / PR Agent 確認 → マージ。これで「登録→確認→スキャン開始」が API で一気通貫
-2. **ADR-0003 認証情報のアプリ層暗号化** → worker に credential ロード＋復号＋ヘッダ注入（`engine.ScanRequest` にヘッダ受け口を追加し session スキャンを通す）
-3. Juice Shop で検知精度の検証（Nuclei CLI ベースライン vs goodast）: `make juiceshop-up` → `NUCLEI_TEST_TARGET=http://localhost:3001 make nuclei-scan`
+1. **ADR-0003 認証情報のアプリ層暗号化** → api に credential 受付＋暗号化保存（`scan_credentials.enc_headers`）、worker に credential ロード＋復号＋ヘッダ注入（`engine.ScanRequest` にヘッダ受け口を追加し session スキャンを通す）
+2. Juice Shop で検知精度の検証（Nuclei CLI ベースライン vs goodast）: `make juiceshop-up` → `NUCLEI_TEST_TARGET=http://localhost:3001 make nuclei-scan`
 
 ### ADR-0002 の持ち越し / 留意点
 - **nuclei-templates の取得は未実装**（SDK は既定 catalog 依存）。`make setup` / worker 起動時に固定バージョンを取得する配線は別途（企画書 §12「テンプレート配布」）。`engine/nuclei` の integration テストはテンプレート導入済みを前提にスキップ可能化済み
