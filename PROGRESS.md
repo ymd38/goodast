@@ -11,12 +11,13 @@
 ## 現在地スナップショット
 
 - フェーズ: **PoC Phase 1**
-- 作業ブランチ: `feat/0008-credential-api`（ADR-0003 PR②）
-- PR #1〜#8 マージ済み（#8 = ADR-0003 PR① secrets モジュール）
-- 進行中: **ADR-0003 認証情報のアプリ層暗号化**（3段 PR）
-  - **PR① 共有 `secrets/` モジュール**（#8 マージ済み）: AES-256-GCM / 版付きエンベロープ / AAD=siteID / `Headers`・`EncryptedHeaders`。unit 100%
-  - **PR② api: 認証情報の受付・暗号化保存**（本ブランチ・完了）: migration 000005 `UNIQUE(site_id)` + config `GOODAST_ENCRYPTION_KEY`（必須）+ `api/internal/credential/`（service/repository）+ `PUT/DELETE/GET /sites/:id/credentials`（暗号化 upsert・**none は行の不在**・マスク表示）。DI で Cipher を provide し鍵不正なら起動失敗。結合テストで平文リーク無し・マスク・CHECK 充足を検証
-  - PR③ worker: 復号・ヘッダ注入（`engine.ScanRequest.Headers` + nuclei `WithHeaders` + creds ロード。復号 AAD=siteID）
+- 作業ブランチ: `feat/0009-worker-credential-injection`（ADR-0003 PR③）
+- PR #1〜#9 マージ済み（#8 = secrets モジュール / #9 = api 認証情報エンドポイント）
+- 進行中: **ADR-0003 認証情報のアプリ層暗号化**（3段 PR・PR③で完結）
+  - **PR① 共有 `secrets/`**（#8 マージ済み）: AES-256-GCM / 版付きエンベロープ / AAD=siteID / `Headers`・`EncryptedHeaders`。unit 100%
+  - **PR② api 受付・暗号化保存**（#9 マージ済み）: migration 000005 `UNIQUE(site_id)` + `GOODAST_ENCRYPTION_KEY`（必須）+ `PUT/DELETE/GET /sites/:id/credentials`（暗号化 upsert・none は行の不在・マスク）
+  - **PR③ worker 復号・ヘッダ注入**（本ブランチ・完了）: worker query `GetScanCredentials`（scans⨝scan_credentials）+ config 鍵（必須）+ DI Cipher。`engine.ScanRequest.Headers` 追加 → nuclei `WithHeaders` 注入。`scanjob` で creds ロード→`OpenHeaders(AAD=siteID)`→`ToNucleiFormat()`→注入。復号失敗は failed。**平文ヘッダは非ログ**。結合テストで注入経路を検証
+  - これで **認証後スキャン**が通る（api で登録→worker で復号注入）。次: §10-3 検証（認証後 finding 増）を parity に追加
 - sqlc: **v1.31.1** / river: **v0.39.0** / **Nuclei SDK: v3.9.0（go.mod 固定）**
 - モジュール構成: api / worker / jobs / **secrets（認証情報暗号化・依存ゼロ・ADR-0003）** の4モジュール（go.work + replace）
 - リモート: `ymd38/goodast`（**private**）
@@ -162,6 +163,22 @@
 | P2 | severity/件数を assert せずレポートのみ（Rule 13） | ✅ 共有 template-id の **severity-per-template を hard assert**（同一テンプレ由来で決定的）。生件数は URL 多重度で非決定的なため report 維持（理由を明記） |
 | P1 | 認証スキャン未実施（Rule 13 / §10-3） | ⏭️ 先送り。ヘッダ注入は ADR-0003 未実装（`engine.ScanRequest` にヘッダ受け口が無い）。ADR-0003 完了後に本テストへ追加 |
 
+### PR #9（api credential）レビュー backlog（Qodo / PR Agent）
+
+| ID | 指摘 | 対応 |
+|---|---|---|
+| Bug1 | GetStatus が行の存在だけで configured=true（auth_mode 未評価） | ✅ `auth_mode='session'` 限定で configured。none 行混入でも整合。結合テストに none 行ケース追加 |
+| Bug2 | GET が `SELECT *` で不要な enc_headers(bytea) 取得 | ✅ api は復号しないため `SELECT auth_mode, created_at` に限定。upsert も `:exec` 化 |
+| Sec | Makefile に固定 dev 鍵をコミット | ✅ 固定鍵廃止 → `make dev-key` で開発者ローカル生成（gitignore）。履歴からも除去（squash） |
+
+### PR #10（worker 復号・注入）レビュー backlog（Qodo / PR Agent）
+
+| ID | 指摘 | 対応 |
+|---|---|---|
+| W1 | loadHeaders の一過性 DB エラーも即 failed（再試行抑止・Bug） | ✅ `permanentCredentialError`（復号/検証失敗）で分類。恒久→failed / 一過性→river 再試行（最終試行のみ failed）。結合テストで decrypt 失敗→failed を検証 |
+| W2 | credential 失敗が掃除前で stale findings 残留（PR Agent） | ✅ `DeleteFindingsByScan` を loadHeaders より前へ移動。decrypt 失敗でも古い findings が残らない（テストで検証） |
+| W3 | WithHeaders 全リクエスト注入 → クロスホスト redirect で認証ヘッダ漏えい（Security） | ⏭️ **要ハードニング backlog**（下記）。SDK に redirect 制御 option 関数が無く小修正不可。コメント強化＋緩和策（単一ターゲット・非クロール・intrusive 除外）を明記 |
+
 ## 直近のアクション（resume ポイント）
 
 1. `test/0006-nuclei-cli-parity` の PR 作成 → マージ
@@ -169,6 +186,7 @@
 3. 検知精度 検証（未認証）は完了: `make juiceshop-up` → `make nuclei-parity`（`NUCLEI_TEST_TARGET`/`NUCLEI_TEST_TAGS` 上書き可）
 
 ### ADR-0002 の持ち越し / 留意点
+- **【要ハードニング / 認証スキャンで顕在化】クロスホスト redirect での認証ヘッダ漏えい（PR #10 W3）**: `WithHeaders` は SDK 全リクエストにヘッダを付与するが、SDK はリクエスト時の host/path allowlist 強制手段（redirect 制御 option 関数）を持たない。テンプレートが redirects を有効化しクロスホスト redirect が起きると Cookie/Bearer が意図しないホストへ送られ得る。**恒久対策 = クロール/認証スキャン用の custom transport + redirect ポリシー**（既存の「リクエスト時 host 遮断」持ち越しと同一。認証注入導入で優先度上昇）。現状の緩和: 単一ターゲット・非クロール（katana 無効）・破壊的/intrusive タグ除外で逸脱経路を限定。
 - **nuclei-templates の取得は未実装**（SDK は既定 catalog 依存）。`make setup` / worker 起動時に固定バージョンを取得する配線は別途（企画書 §12「テンプレート配布」）。`engine/nuclei` の integration テストはテンプレート導入済みを前提にスキップ可能化済み
 - **【決定 2026-07-02】nuclei バイナリ/CLI はどのコンテナにも同梱しない**: nuclei は SDK として worker の Go バイナリに静的リンク済みで、実行時に別途 nuclei バイナリは不要。CLI は parity 検証（`make nuclei-parity`）のベースライン比較でのみ `go run @go.mod版`（SDK とバージョン一致）として使い、goodast ランタイムには不要。api への同梱案は ADR-0002 と衝突するため不採用。
   - ただし **nuclei-templates（データ）** は別件。SDK が scan 時に参照するため、固定版取得・worker への同梱は未実装のまま（§12「テンプレート配布」）。api/worker Dockerfile も未作成（docker-compose は `build:` 参照のみ）

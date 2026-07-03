@@ -83,7 +83,7 @@ func (e *Engine) Version() string { return version }
 // クロスホスト redirect に限られる。リクエスト時の厳密な host/path 遮断（カスタム transport /
 // redirect ポリシー）はクロール・認証スキャン導入フェーズで実装する。
 func (e *Engine) Scan(ctx context.Context, req engine.ScanRequest, onFinding engine.FindingCallback) error {
-	ne, err := nucleilib.NewNucleiEngineCtx(ctx,
+	opts := []nucleilib.NucleiSDKOptions{
 		nucleilib.WithTemplateFilters(nucleilib.TemplateFilters{
 			Severity:    e.cfg.Severities,
 			Tags:        e.cfg.Tags,
@@ -96,7 +96,20 @@ func (e *Engine) Scan(ctx context.Context, req engine.ScanRequest, onFinding eng
 		nucleilib.WithSandboxOptions(false, false),
 		// テンプレートのバージョンは運用で固定する。実行時の自動更新チェックは無効化する。
 		nucleilib.DisableUpdateCheck(),
-	)
+	}
+	// 認証後スキャン: 持ち込みセッションを全リクエストに注入する（ADR-0003）。値はログしない。
+	//
+	// 留意（要ハードニング・持ち越し）: WithHeaders は SDK の全リクエストにヘッダを付与する。
+	// 現状の SDK はリクエスト時の host/path allowlist 強制手段を持たず（redirect 制御の option 関数も無い）、
+	// テンプレートが redirects を有効化しクロスホスト redirect が起きると認証ヘッダが意図しない
+	// ホストへ送られ得る（逸脱の影響が「余計なリクエスト」→「認証情報の送信」に格上げ）。
+	// 恒久対策はクロール/認証スキャン用の custom transport + redirect ポリシー（別タスク）。
+	// 現状の緩和: 単一ターゲット・非クロール（katana 無効）・破壊的/intrusive タグ除外で逸脱経路を限定。
+	if len(req.Headers) > 0 {
+		opts = append(opts, nucleilib.WithHeaders(req.Headers))
+	}
+
+	ne, err := nucleilib.NewNucleiEngineCtx(ctx, opts...)
 	if err != nil {
 		return fmt.Errorf("create nuclei engine: %w", err)
 	}

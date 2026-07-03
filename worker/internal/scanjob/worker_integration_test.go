@@ -3,11 +3,14 @@
 package scanjob_test
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"errors"
 	"io"
 	"log/slog"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -17,10 +20,47 @@ import (
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 
 	"github.com/ymd38/goodast/jobs"
+	"github.com/ymd38/goodast/secrets"
 	"github.com/ymd38/goodast/worker/internal/db"
 	"github.com/ymd38/goodast/worker/internal/engine"
 	"github.com/ymd38/goodast/worker/internal/scanjob"
 )
+
+// testCipher は結合テスト用の Cipher（固定 32B 鍵）。
+func testCipher(t *testing.T) *secrets.Cipher {
+	t.Helper()
+	c, err := secrets.NewCipher(base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{9}, 32)))
+	if err != nil {
+		t.Fatalf("NewCipher: %v", err)
+	}
+	return c
+}
+
+// newTestWorker は WorkerDeps を組んで Worker を生成する（NewWorker の positional 廃止に対応）。
+func newTestWorker(pool *pgxpool.Pool, eng engine.Engine, cipher *secrets.Cipher, logger *slog.Logger) *scanjob.Worker {
+	return scanjob.NewWorker(scanjob.WorkerDeps{Queries: db.New(pool), Engine: eng, Cipher: cipher, Logger: logger})
+}
+
+// capturingEngine は Scan に渡された ScanRequest.Headers を記録する engine.Engine 実装。
+type capturingEngine struct {
+	mu      sync.Mutex
+	headers []string
+}
+
+func (*capturingEngine) Version() string { return "capture/v0" }
+
+func (e *capturingEngine) Scan(_ context.Context, req engine.ScanRequest, _ engine.FindingCallback) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.headers = append([]string(nil), req.Headers...)
+	return nil
+}
+
+func (e *capturingEngine) captured() []string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.headers
+}
 
 // fakeEngine は engine.Engine のテスト用実装。SDK を呼ばずに固定 findings を返す。
 // （Nuclei SDK 実体の検証は worker/internal/engine/nuclei の integration テストで行う。）
@@ -125,7 +165,7 @@ func TestScanWorker(t *testing.T) {
 	}}
 
 	workers := river.NewWorkers()
-	river.AddWorker(workers, scanjob.NewWorker(db.New(pool), eng, quiet))
+	river.AddWorker(workers, newTestWorker(pool, eng, testCipher(t), quiet))
 	workerClient, err := river.NewClient(riverpgxv5.New(pool), &river.Config{
 		Queues:  map[string]river.QueueConfig{river.QueueDefault: {MaxWorkers: 1}},
 		Workers: workers,
@@ -214,7 +254,7 @@ func TestScanWorkerEngineFailureMarksFailed(t *testing.T) {
 
 	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
 	workers := river.NewWorkers()
-	river.AddWorker(workers, scanjob.NewWorker(db.New(pool), failingEngine{}, quiet))
+	river.AddWorker(workers, newTestWorker(pool, failingEngine{}, testCipher(t), quiet))
 	client, err := river.NewClient(riverpgxv5.New(pool), &river.Config{
 		Queues:  map[string]river.QueueConfig{river.QueueDefault: {MaxWorkers: 1}},
 		Workers: workers,
@@ -240,4 +280,145 @@ func TestScanWorkerEngineFailureMarksFailed(t *testing.T) {
 		t.Fatalf("enqueue: %v", err)
 	}
 	waitForStatus(t, pool, scanID, "failed")
+}
+
+// TestScanWorkerInjectsSessionHeaders は、session 認証情報が設定された scan で、復号済みの
+// ヘッダが engine.ScanRequest.Headers に注入されることを検証する（ADR-0003）。
+func TestScanWorkerInjectsSessionHeaders(t *testing.T) {
+	dbURL := os.Getenv("TEST_DATABASE_URL")
+	if dbURL == "" {
+		t.Skip("TEST_DATABASE_URL not set; skipping integration test")
+	}
+	ctx := context.Background()
+
+	pool, err := pgxpool.New(ctx, dbURL)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer pool.Close()
+
+	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
+	cipher := testCipher(t)
+	capEng := &capturingEngine{}
+
+	workers := river.NewWorkers()
+	river.AddWorker(workers, newTestWorker(pool, capEng, cipher, quiet))
+	client, err := river.NewClient(riverpgxv5.New(pool), &river.Config{
+		Queues:  map[string]river.QueueConfig{river.QueueDefault: {MaxWorkers: 1}},
+		Workers: workers,
+		Logger:  quiet,
+	})
+	if err != nil {
+		t.Fatalf("client: %v", err)
+	}
+	insertOnly, err := river.NewClient(riverpgxv5.New(pool), &river.Config{Logger: quiet})
+	if err != nil {
+		t.Fatalf("insert-only client: %v", err)
+	}
+	if err := client.Start(ctx); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	defer func() { _ = client.Stop(ctx) }()
+
+	// localhost で所有確認をスキップ。site に session 認証情報を暗号化して仕込む（AAD=site_id）。
+	siteID := seedSite(t, pool, "http://localhost:3000", false)
+	uid := uuid.MustParse(siteID)
+	enc, err := cipher.SealHeaders(secrets.Headers{
+		{Name: "Cookie", Value: "session=abc"},
+		{Name: "Authorization", Value: "Bearer xyz"},
+	}, uid[:])
+	if err != nil {
+		t.Fatalf("seal: %v", err)
+	}
+	if _, err := pool.Exec(ctx,
+		`INSERT INTO scan_credentials (site_id, auth_mode, enc_headers) VALUES ($1::uuid, 'session', $2)`,
+		siteID, enc.Bytes()); err != nil {
+		t.Fatalf("seed credentials: %v", err)
+	}
+
+	scanID := seedScan(t, pool, siteID, "queued")
+	if _, err := insertOnly.Insert(ctx, jobs.ScanArgs{ScanID: scanID}, nil); err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+	waitForStatus(t, pool, scanID, "done")
+
+	got := capEng.captured()
+	want := []string{"Cookie: session=abc", "Authorization: Bearer xyz"}
+	if len(got) != len(want) {
+		t.Fatalf("injected headers = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("header[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+// TestScanWorkerCredentialDecryptFailureMarksFailed は、認証情報の復号に失敗した scan が
+// （恒久エラーとして）failed に確定し、かつ実行前掃除で古い findings が残らないことを検証する。
+func TestScanWorkerCredentialDecryptFailureMarksFailed(t *testing.T) {
+	dbURL := os.Getenv("TEST_DATABASE_URL")
+	if dbURL == "" {
+		t.Skip("TEST_DATABASE_URL not set; skipping integration test")
+	}
+	ctx := context.Background()
+
+	pool, err := pgxpool.New(ctx, dbURL)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer pool.Close()
+
+	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
+	workers := river.NewWorkers()
+	// worker の cipher（鍵=9…）と別鍵で封緘し、復号を必ず失敗させる。
+	river.AddWorker(workers, newTestWorker(pool, fakeEngine{}, testCipher(t), quiet))
+	client, err := river.NewClient(riverpgxv5.New(pool), &river.Config{
+		Queues:  map[string]river.QueueConfig{river.QueueDefault: {MaxWorkers: 1}},
+		Workers: workers,
+		Logger:  quiet,
+	})
+	if err != nil {
+		t.Fatalf("client: %v", err)
+	}
+	insertOnly, err := river.NewClient(riverpgxv5.New(pool), &river.Config{Logger: quiet})
+	if err != nil {
+		t.Fatalf("insert-only client: %v", err)
+	}
+	if err := client.Start(ctx); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	defer func() { _ = client.Stop(ctx) }()
+
+	wrongCipher, err := secrets.NewCipher(base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{1}, 32)))
+	if err != nil {
+		t.Fatalf("NewCipher: %v", err)
+	}
+	siteID := seedSite(t, pool, "http://localhost:3000", false)
+	uid := uuid.MustParse(siteID)
+	enc, err := wrongCipher.SealHeaders(secrets.Headers{{Name: "Cookie", Value: "x"}}, uid[:])
+	if err != nil {
+		t.Fatalf("seal: %v", err)
+	}
+	if _, err := pool.Exec(ctx,
+		`INSERT INTO scan_credentials (site_id, auth_mode, enc_headers) VALUES ($1::uuid, 'session', $2)`,
+		siteID, enc.Bytes()); err != nil {
+		t.Fatalf("seed credentials: %v", err)
+	}
+
+	scanID := seedScan(t, pool, siteID, "queued")
+	// 前回試行の残骸を模した古い finding。復号失敗でも実行前掃除で消えることを確認する。
+	if _, err := pool.Exec(ctx,
+		`INSERT INTO findings (scan_id, template_id, title, severity, url) VALUES ($1::uuid, 'stale', 'stale', 'Low', 'http://localhost/old')`,
+		scanID); err != nil {
+		t.Fatalf("seed stale finding: %v", err)
+	}
+	if _, err := insertOnly.Insert(ctx, jobs.ScanArgs{ScanID: scanID}, nil); err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+	waitForStatus(t, pool, scanID, "failed")
+
+	if count := countFindings(t, pool, scanID); count != 0 {
+		t.Errorf("findings after decrypt-failure = %d, want 0 (stale cleared)", count)
+	}
 }
