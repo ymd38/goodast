@@ -60,8 +60,8 @@ func TestNucleiCLIParity(t *testing.T) {
 	cfg := nuclei.DefaultConfig()
 	cfg.Tags = tagList
 
-	// --- goodast エンジン経由の検出 ---
-	goodast := runGoodastScan(t, scope, cfg)
+	// --- goodast エンジン経由の検出（未認証）---
+	goodast := runGoodastScan(t, scope, cfg, nil)
 	t.Logf("goodast: %d findings (tags=%s, exclude=%v, rate=%d/s)",
 		len(goodast), tags, cfg.ExcludeTags, cfg.RateLimit)
 
@@ -126,7 +126,8 @@ func TestNucleiCLIParity(t *testing.T) {
 }
 
 // runGoodastScan は goodast エンジンで対象をスキャンし、template-id|url をキーに findings を返す。
-func runGoodastScan(t *testing.T, scope engine.Scope, cfg nuclei.Config) map[string]engine.Finding {
+// headers は認証後スキャンで注入する "Name: Value" 形式のヘッダ（未認証は nil）。
+func runGoodastScan(t *testing.T, scope engine.Scope, cfg nuclei.Config, headers []string) map[string]engine.Finding {
 	t.Helper()
 	eng := nuclei.New(cfg)
 	if eng.Version() == "" {
@@ -145,7 +146,7 @@ func runGoodastScan(t *testing.T, scope engine.Scope, cfg nuclei.Config) map[str
 		out[f.TemplateID+"|"+f.URL] = f
 	}
 	// 時間切れは収集済みの findings で検証を続ける（既存 TestNucleiEngineScan と同方針）。
-	if err := eng.Scan(ctx, engine.ScanRequest{Scope: scope}, onFinding); err != nil && !errors.Is(err, context.DeadlineExceeded) {
+	if err := eng.Scan(ctx, engine.ScanRequest{Scope: scope, Headers: headers}, onFinding); err != nil && !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("goodast Scan: %v", err)
 	}
 	return out
