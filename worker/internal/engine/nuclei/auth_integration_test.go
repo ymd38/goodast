@@ -127,6 +127,15 @@ func TestNucleiAuthenticatedCoverage(t *testing.T) {
 	unauthSet := templateSet(unauth)
 	authSet := templateSet(auth)
 
+	// 未認証集合が空だと B ⊇ A は vacuously true になり、テンプレ未導入・タグ誤設定・対象未到達
+	// （エラーにならないケース）でも素通りする。比較の土台＝未認証ベースラインが無い状態を明示 fail する
+	// （parity テストの in-scope 0 件ガードと同趣旨）。
+	if len(unauthSet) == 0 {
+		t.Fatalf("未認証スキャンが template-id を1つも検出しませんでした: "+
+			"カバレッジ比較の土台が無く B ⊇ A を検証できない — templates/target/tags を確認 "+
+			"(target=%s tags=%v)", target, tagList)
+	}
+
 	// B ⊇ A: 認証で未認証の検出クラスを失っていないこと。
 	var missing []string
 	for id := range unauthSet {
