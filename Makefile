@@ -35,6 +35,10 @@ db-up: ## PostgreSQL を docker-compose で起動する
 db-down: ## PostgreSQL を停止する
 	docker compose stop db
 
+.PHONY: db-shell
+db-shell: ## PostgreSQL に psql で接続する（コンテナ内の環境変数を使用）
+	docker compose exec db sh -c 'psql -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"'
+
 .PHONY: migrate
 migrate: ## マイグレーションを適用する（up）
 	$(MIGRATE) -path migrations -database "$(DATABASE_URL)" up
