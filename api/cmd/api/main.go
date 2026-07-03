@@ -21,10 +21,12 @@ import (
 	"go.uber.org/dig"
 
 	"github.com/ymd38/goodast/api/internal/config"
+	"github.com/ymd38/goodast/api/internal/credential"
 	"github.com/ymd38/goodast/api/internal/db"
 	"github.com/ymd38/goodast/api/internal/handler"
 	"github.com/ymd38/goodast/api/internal/scan"
 	"github.com/ymd38/goodast/api/internal/site"
+	"github.com/ymd38/goodast/secrets"
 )
 
 func main() {
@@ -51,12 +53,16 @@ func run() error {
 		newPool,
 		func(pool *pgxpool.Pool) *db.Queries { return db.New(pool) },
 		newRiverClient,
+		newCipher,
 		scan.NewService,
 		site.NewRepository,
 		site.DefaultVerifier,
 		site.NewService,
+		credential.NewRepository,
+		credential.NewService,
 		handler.NewSiteHandler,
 		handler.NewScanHandler,
+		handler.NewCredentialHandler,
 		newRouter,
 		newServer,
 	}
@@ -91,6 +97,15 @@ func newPool(cfg *config.Config) (*pgxpool.Pool, error) {
 	return pool, nil
 }
 
+// newCipher は認証情報暗号化用の Cipher を生成する。鍵が不正なら起動を失敗させる（ADR-0003）。
+func newCipher(cfg *config.Config) (*secrets.Cipher, error) {
+	c, err := secrets.NewCipher(cfg.EncryptionKey)
+	if err != nil {
+		return nil, fmt.Errorf("init cipher: %w", err)
+	}
+	return c, nil
+}
+
 // newRiverClient は insert-only の river クライアントを生成する。
 // api はジョブを積むだけで処理はしない（worker に分離・ADR-0001）。Queues/Workers は持たない。
 func newRiverClient(pool *pgxpool.Pool) (*river.Client[pgx.Tx], error) {
@@ -99,10 +114,11 @@ func newRiverClient(pool *pgxpool.Pool) (*river.Client[pgx.Tx], error) {
 
 type routerDeps struct {
 	dig.In
-	Pool   *pgxpool.Pool
-	Site   *handler.SiteHandler
-	Scan   *handler.ScanHandler
-	Logger *slog.Logger
+	Pool       *pgxpool.Pool
+	Site       *handler.SiteHandler
+	Scan       *handler.ScanHandler
+	Credential *handler.CredentialHandler
+	Logger     *slog.Logger
 }
 
 // maxRequestBodyBytes は全ルート共通のリクエストボディ上限（1MiB）。
@@ -118,6 +134,7 @@ func newRouter(d routerDeps) *gin.Engine {
 	// feature ハンドラのルート登録。
 	d.Site.RegisterRoutes(r)
 	d.Scan.RegisterRoutes(r)
+	d.Credential.RegisterRoutes(r)
 
 	// liveness: プロセス死活のみ。DB は見ない。
 	r.GET("/healthz", func(c *gin.Context) {
