@@ -116,12 +116,26 @@ func (w *Worker) runScan(ctx context.Context, scanID uuid.UUID, pgID pgtype.UUID
 		return w.markFailed(ctx, scanID, pgID)
 	}
 
-	// 認証情報（持ち込みセッション）をロード・復号する（ADR-0003）。復号失敗は設定/データ
-	// 不整合で再試行しても直らないため failed にする。ヘッダ値は一切ログしない。
+	// 実行前に必ず既存 findings を掃除する（再試行・途中失敗でも stale findings を残さない・#5）。
+	// 認証情報ロードより前に行い、復号失敗で failed 確定する場合も古い結果が残らないようにする。
+	if err := w.queries.DeleteFindingsByScan(ctx, pgID); err != nil {
+		return fmt.Errorf("clear prior findings %s: %w", scanID, err)
+	}
+
+	// 認証情報（持ち込みセッション）をロード・復号する（ADR-0003）。ヘッダ値は一切ログしない。
 	headers, err := w.loadHeaders(ctx, pgID, uuid.UUID(target.SiteID.Bytes))
 	if err != nil {
-		w.logger.Error("load scan credentials failed; marking failed", "scan_id", scanID, "err", err)
-		return w.markFailed(ctx, scanID, pgID)
+		// 復号/検証失敗は設定・データ不整合で再試行しても直らないため failed に確定する。
+		if permanentCredentialError(err) {
+			w.logger.Error("credential decrypt/validation failed; marking failed", "scan_id", scanID, "err", err)
+			return w.markFailed(ctx, scanID, pgID)
+		}
+		// DB 一時障害等は engine 実行エラーと同様に river の再試行へ委ね、最終試行のみ failed 確定。
+		if lastAttempt {
+			w.logger.Error("credential load failed on final attempt; marking failed", "scan_id", scanID, "err", err)
+			return w.markFailed(ctx, scanID, pgID)
+		}
+		return fmt.Errorf("load credentials %s: %w", scanID, err)
 	}
 	if len(headers) > 0 {
 		w.logger.Info("authenticated scan; injecting session headers", "scan_id", scanID, "header_count", len(headers))
@@ -157,14 +171,8 @@ func (w *Worker) runScan(ctx context.Context, scanID uuid.UUID, pgID pgtype.UUID
 
 // executeScan は engine スキャンを実行し、検出ごとに finding を保存しつつ収集して返す。
 // onFinding は複数 goroutine から呼ばれ得るため mutex で直列化する（contract 準拠）。
-//
-// 再試行（running からの再開）での重複保存を防ぐため、実行前に当該 scan の findings を
-// 掃除して再実行を冪等にする（#5）。
+// 既存 findings の掃除（再実行の冪等化・#5）は呼び出し元 runScan が実行前に行う。
 func (w *Worker) executeScan(ctx context.Context, pgID pgtype.UUID, scope engine.Scope, headers []string) ([]engine.Finding, error) {
-	if err := w.queries.DeleteFindingsByScan(ctx, pgID); err != nil {
-		return nil, fmt.Errorf("clear prior findings: %w", err)
-	}
-
 	var (
 		mu        sync.Mutex
 		collected []engine.Finding
@@ -212,6 +220,14 @@ func (w *Worker) loadHeaders(ctx context.Context, pgID pgtype.UUID, siteID uuid.
 		return nil, fmt.Errorf("decrypt credentials: %w", err)
 	}
 	return headers.ToNucleiFormat(), nil
+}
+
+// permanentCredentialError は再試行で解消しない認証情報エラー（復号失敗・不正ヘッダ）かを判定する。
+// これらは鍵/データ不整合が原因で、DB 一時障害のような一過性エラーとは区別して即 failed にする。
+func permanentCredentialError(err error) bool {
+	return errors.Is(err, secrets.ErrDecrypt) ||
+		errors.Is(err, secrets.ErrInvalidHeader) ||
+		errors.Is(err, secrets.ErrNoHeaders)
 }
 
 // markFailed は scan を failed にし、ジョブを完了扱い（nil）にしてよいかを返す。

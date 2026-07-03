@@ -353,3 +353,72 @@ func TestScanWorkerInjectsSessionHeaders(t *testing.T) {
 		}
 	}
 }
+
+// TestScanWorkerCredentialDecryptFailureMarksFailed は、認証情報の復号に失敗した scan が
+// （恒久エラーとして）failed に確定し、かつ実行前掃除で古い findings が残らないことを検証する。
+func TestScanWorkerCredentialDecryptFailureMarksFailed(t *testing.T) {
+	dbURL := os.Getenv("TEST_DATABASE_URL")
+	if dbURL == "" {
+		t.Skip("TEST_DATABASE_URL not set; skipping integration test")
+	}
+	ctx := context.Background()
+
+	pool, err := pgxpool.New(ctx, dbURL)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer pool.Close()
+
+	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
+	workers := river.NewWorkers()
+	// worker の cipher（鍵=9…）と別鍵で封緘し、復号を必ず失敗させる。
+	river.AddWorker(workers, newTestWorker(pool, fakeEngine{}, testCipher(t), quiet))
+	client, err := river.NewClient(riverpgxv5.New(pool), &river.Config{
+		Queues:  map[string]river.QueueConfig{river.QueueDefault: {MaxWorkers: 1}},
+		Workers: workers,
+		Logger:  quiet,
+	})
+	if err != nil {
+		t.Fatalf("client: %v", err)
+	}
+	insertOnly, err := river.NewClient(riverpgxv5.New(pool), &river.Config{Logger: quiet})
+	if err != nil {
+		t.Fatalf("insert-only client: %v", err)
+	}
+	if err := client.Start(ctx); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	defer func() { _ = client.Stop(ctx) }()
+
+	wrongCipher, err := secrets.NewCipher(base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{1}, 32)))
+	if err != nil {
+		t.Fatalf("NewCipher: %v", err)
+	}
+	siteID := seedSite(t, pool, "http://localhost:3000", false)
+	uid := uuid.MustParse(siteID)
+	enc, err := wrongCipher.SealHeaders(secrets.Headers{{Name: "Cookie", Value: "x"}}, uid[:])
+	if err != nil {
+		t.Fatalf("seal: %v", err)
+	}
+	if _, err := pool.Exec(ctx,
+		`INSERT INTO scan_credentials (site_id, auth_mode, enc_headers) VALUES ($1::uuid, 'session', $2)`,
+		siteID, enc.Bytes()); err != nil {
+		t.Fatalf("seed credentials: %v", err)
+	}
+
+	scanID := seedScan(t, pool, siteID, "queued")
+	// 前回試行の残骸を模した古い finding。復号失敗でも実行前掃除で消えることを確認する。
+	if _, err := pool.Exec(ctx,
+		`INSERT INTO findings (scan_id, template_id, title, severity, url) VALUES ($1::uuid, 'stale', 'stale', 'Low', 'http://localhost/old')`,
+		scanID); err != nil {
+		t.Fatalf("seed stale finding: %v", err)
+	}
+	if _, err := insertOnly.Insert(ctx, jobs.ScanArgs{ScanID: scanID}, nil); err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+	waitForStatus(t, pool, scanID, "failed")
+
+	if count := countFindings(t, pool, scanID); count != 0 {
+		t.Errorf("findings after decrypt-failure = %d, want 0 (stale cleared)", count)
+	}
+}
