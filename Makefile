@@ -58,8 +58,8 @@ dev-api: dev-key ## API サーバを起動する（Gin）
 	cd api && DATABASE_URL="$(DATABASE_URL)" GOODAST_ENCRYPTION_KEY="$$(cat '$(DEV_KEY_FILE)')" go run ./cmd/api
 
 .PHONY: dev-worker
-dev-worker: ## スキャンワーカーを起動する（Nuclei SDK 隔離）
-	cd worker && DATABASE_URL="$(DATABASE_URL)" go run ./cmd/worker
+dev-worker: dev-key ## スキャンワーカーを起動する（Nuclei SDK 隔離）
+	cd worker && DATABASE_URL="$(DATABASE_URL)" GOODAST_ENCRYPTION_KEY="$$(cat '$(DEV_KEY_FILE)')" go run ./cmd/worker
 
 .PHONY: dev-web
 dev-web: ## (TODO) web は未スキャフォールド

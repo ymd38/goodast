@@ -83,7 +83,7 @@ func (e *Engine) Version() string { return version }
 // クロスホスト redirect に限られる。リクエスト時の厳密な host/path 遮断（カスタム transport /
 // redirect ポリシー）はクロール・認証スキャン導入フェーズで実装する。
 func (e *Engine) Scan(ctx context.Context, req engine.ScanRequest, onFinding engine.FindingCallback) error {
-	ne, err := nucleilib.NewNucleiEngineCtx(ctx,
+	opts := []nucleilib.NucleiSDKOptions{
 		nucleilib.WithTemplateFilters(nucleilib.TemplateFilters{
 			Severity:    e.cfg.Severities,
 			Tags:        e.cfg.Tags,
@@ -96,7 +96,14 @@ func (e *Engine) Scan(ctx context.Context, req engine.ScanRequest, onFinding eng
 		nucleilib.WithSandboxOptions(false, false),
 		// テンプレートのバージョンは運用で固定する。実行時の自動更新チェックは無効化する。
 		nucleilib.DisableUpdateCheck(),
-	)
+	}
+	// 認証後スキャン: 持ち込みセッションを全リクエストに注入する（ADR-0003）。
+	// 値は機微情報のためログしない。
+	if len(req.Headers) > 0 {
+		opts = append(opts, nucleilib.WithHeaders(req.Headers))
+	}
+
+	ne, err := nucleilib.NewNucleiEngineCtx(ctx, opts...)
 	if err != nil {
 		return fmt.Errorf("create nuclei engine: %w", err)
 	}

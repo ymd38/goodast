@@ -14,6 +14,7 @@ import (
 // Config は worker の実行時設定。環境変数から Load で構築する。
 type Config struct {
 	DatabaseURL     string
+	EncryptionKey   string // GOODAST_ENCRYPTION_KEY（base64 32B）。認証情報の復号に使う（ADR-0003）。api と同一鍵。
 	HealthAddr      string
 	ShutdownTimeout time.Duration
 	LogLevel        slog.Level
@@ -34,6 +35,12 @@ func Load() (*Config, error) {
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
 		return nil, fmt.Errorf("DATABASE_URL is required")
+	}
+
+	// 認証情報の復号鍵は必須（ADR-0003）。api と同一鍵を設定する。形式検証は Cipher 構築に委ねる。
+	encKey := os.Getenv("GOODAST_ENCRYPTION_KEY")
+	if encKey == "" {
+		return nil, fmt.Errorf("GOODAST_ENCRYPTION_KEY is required")
 	}
 
 	level, err := parseLogLevel(getEnv("LOG_LEVEL", "info"))
@@ -69,6 +76,7 @@ func Load() (*Config, error) {
 
 	return &Config{
 		DatabaseURL:     dbURL,
+		EncryptionKey:   encKey,
 		HealthAddr:      getEnv("WORKER_HEALTH_ADDR", defaultHealthAddr),
 		ShutdownTimeout: timeout,
 		LogLevel:        level,

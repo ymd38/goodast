@@ -19,6 +19,7 @@ import (
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 	"go.uber.org/dig"
 
+	"github.com/ymd38/goodast/secrets"
 	"github.com/ymd38/goodast/worker/internal/config"
 	"github.com/ymd38/goodast/worker/internal/db"
 	"github.com/ymd38/goodast/worker/internal/engine"
@@ -51,6 +52,7 @@ func run() error {
 		func(pool *pgxpool.Pool) *db.Queries { return db.New(pool) },
 		// engine.Engine の唯一の実装は Nuclei（ADR-0002）。保守的デフォルト設定で配線する。
 		func() engine.Engine { return nuclei.New(nuclei.DefaultConfig()) },
+		newCipher,
 		scanjob.NewWorker,
 		newRiverClient,
 		newHealthServer,
@@ -66,6 +68,15 @@ func run() error {
 
 func newLogger(level slog.Level) *slog.Logger {
 	return slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level}))
+}
+
+// newCipher は認証情報復号用の Cipher を生成する。鍵が不正なら起動を失敗させる（ADR-0003）。
+func newCipher(cfg *config.Config) (*secrets.Cipher, error) {
+	c, err := secrets.NewCipher(cfg.EncryptionKey)
+	if err != nil {
+		return nil, fmt.Errorf("init cipher: %w", err)
+	}
+	return c, nil
 }
 
 func newPool(cfg *config.Config) (*pgxpool.Pool, error) {

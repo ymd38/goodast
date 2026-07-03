@@ -20,6 +20,9 @@ type Querier interface {
 	// ライフサイクルのみを許可する。不正な遷移は 0 行更新となり :one では ErrNoRows を
 	// 返すため、呼び出し側で「既に遷移済み／不正遷移」として扱える。
 	GetScan(ctx context.Context, id pgtype.UUID) (Scan, error)
+	// worker が scan_id から当該 site の暗号化認証情報をロードする（復号して注入・ADR-0003）。
+	// 認証情報が未設定の scan は ErrNoRows として返り、未認証スキャンとして扱う。
+	GetScanCredentials(ctx context.Context, id pgtype.UUID) (GetScanCredentialsRow, error)
 	// worker が scan_id からスキャン対象（site）情報をロードする。実スキャン前の
 	// defense-in-depth 所有確認（ADR-0004）と、スキャン投入先 URL の取得に用いる。
 	GetScanTarget(ctx context.Context, id pgtype.UUID) (GetScanTargetRow, error)
