@@ -16,6 +16,7 @@ import (
 
 	nucleilib "github.com/projectdiscovery/nuclei/v3/lib"
 	"github.com/projectdiscovery/nuclei/v3/pkg/output"
+	nucleitypes "github.com/projectdiscovery/nuclei/v3/pkg/types"
 
 	"github.com/ymd38/goodast/worker/internal/engine"
 )
@@ -99,13 +100,19 @@ func (e *Engine) Scan(ctx context.Context, req engine.ScanRequest, onFinding eng
 	}
 	// 認証後スキャン: 持ち込みセッションを全リクエストに注入する（ADR-0003）。値はログしない。
 	//
-	// 留意（要ハードニング・持ち越し）: WithHeaders は SDK の全リクエストにヘッダを付与する。
-	// 現状の SDK はリクエスト時の host/path allowlist 強制手段を持たず（redirect 制御の option 関数も無い）、
-	// テンプレートが redirects を有効化しクロスホスト redirect が起きると認証ヘッダが意図しない
-	// ホストへ送られ得る（逸脱の影響が「余計なリクエスト」→「認証情報の送信」に格上げ）。
-	// 恒久対策はクロール/認証スキャン用の custom transport + redirect ポリシー（別タスク）。
-	// 現状の緩和: 単一ターゲット・非クロール（katana 無効）・破壊的/intrusive タグ除外で逸脱経路を限定。
+	// W3 対策（クロスホスト redirect での認証ヘッダ漏えい防止）: WithHeaders は SDK の全リクエストに
+	// ヘッダを付与するため、テンプレートが redirects を有効化しクロスホスト redirect が起きると
+	// Cookie/Bearer が意図しないホストへ送られ得る。認証情報を注入するときに限り DisableRedirects で
+	// redirect 追従を止め、認証情報が別ホストへ送出される経路を塞ぐ。
+	//   - DisableRedirects は httpclientpool 側でテンプレートの redirects:true すら上書きし、
+	//     全 redirect を DontFollowRedirect（http.ErrUseLastResponse）に強制する（SDK v3.9.0 で確認）。
+	//   - WithOptions は e.opts を全置換するため、既定（types.DefaultOptions）から作った base を
+	//     先頭に適用し、後続の WithTemplateFilters / WithGlobalRateLimit 等をその上に重ねる。
+	//   - 未認証スキャンでは適用しない（漏らす秘密が無く、redirect 追従は検知に有用・§10 parity 無影響）。
 	if len(req.Headers) > 0 {
+		base := nucleitypes.DefaultOptions()
+		base.DisableRedirects = true
+		opts = append([]nucleilib.NucleiSDKOptions{nucleilib.WithOptions(base)}, opts...)
 		opts = append(opts, nucleilib.WithHeaders(req.Headers))
 	}
 
