@@ -4,24 +4,20 @@
 > **新しいセッションはまずこのファイルを読み、現在地・次アクションを把握する。**
 > **各作業の区切りでこのファイルを更新する。** 決定の経緯は `MEMORY.md`、要件/フェーズは `docs/poc-plan.md` を正とする。
 
-最終更新: 2026-07-03
+最終更新: 2026-07-04
 
 ---
 
 ## 現在地スナップショット
 
 - フェーズ: **PoC Phase 1**
-- 作業ブランチ: `test/0011-authenticated-scan-verification`（§10-3 認証後スキャン検証・PR 準備中）
-- PR #1〜#10 マージ済み（#8 = secrets モジュール / #9 = api 認証情報エンドポイント / #10 = worker 復号・ヘッダ注入）
-- **ADR-0003 認証情報のアプリ層暗号化: 完結**（3段 PR #8〜#10 すべてマージ済み）
-  - **PR① 共有 `secrets/`**（#8 マージ済み）: AES-256-GCM / 版付きエンベロープ / AAD=siteID / `Headers`・`EncryptedHeaders`。unit 100%
-  - **PR② api 受付・暗号化保存**（#9 マージ済み）: migration 000005 `UNIQUE(site_id)` + `GOODAST_ENCRYPTION_KEY`（必須）+ `PUT/DELETE/GET /sites/:id/credentials`（暗号化 upsert・none は行の不在・マスク）
-  - **PR③ worker 復号・ヘッダ注入**（#10 マージ済み）: worker query `GetScanCredentials`（scans⨝scan_credentials）+ config 鍵（必須）+ DI Cipher。`engine.ScanRequest.Headers` 追加 → nuclei `WithHeaders` 注入。`scanjob` で creds ロード→`OpenHeaders(AAD=siteID)`→`ToNucleiFormat()`→注入。復号失敗は failed。**平文ヘッダは非ログ**。結合テストで注入経路を検証
-  - これで **認証後スキャン**が通る（api で登録→worker で復号注入）。§10-3 検証テストを追加済み（下記）
-- **§10-3 認証後スキャン検証（PR #7 P1 消化・main 上で未コミット）**: `worker/internal/engine/nuclei/auth_integration_test.go` を追加
-  - `TestNucleiHeaderInjection`（決定的）: ローカル httptest キャプチャサーバへ実 SDK でスキャンし、注入ヘッダがワイヤーに届くことを直接検証（Juice Shop / テンプレ件数に非依存）
-  - `TestNucleiAuthenticatedCoverage`（§10-3 end-to-end）: Juice Shop に実ログインして JWT を注入。未認証集合 A ⊆ 認証集合 B（カバレッジ縮小なし）をハード assert・件数増はレポート（未認証主体テンプレでは非決定的なため）
-  - `make nuclei-auth`（`NUCLEI_TEST_TARGET`/`NUCLEI_TEST_TAGS` 上書き可）。次: ローカルで `make juiceshop-up` → `make nuclei-auth` 実走で PASS 確認
+- 作業ブランチ: `main`（直近 PR #13 マージ済み・次タスク未着手）
+- **PR #1〜#13 マージ済み**
+- **ADR-0003 認証情報のアプリ層暗号化: 完結**（3段 PR #8〜#10）— #8 共有 `secrets/`（AES-256-GCM・AAD=siteID）/ #9 api 受付・暗号化保存（`PUT/DELETE/GET /sites/:id/credentials`）/ #10 worker 復号・`engine.ScanRequest.Headers`→nuclei `WithHeaders` 注入。これで**認証後スキャン**が api→worker で通る（詳細は下記ロードマップ）
+- **§10-3 認証後スキャン検証: 完了**（#11）— `worker/internal/engine/nuclei/auth_integration_test.go`（`TestNucleiHeaderInjection` 決定的注入証明 / `TestNucleiAuthenticatedCoverage` カバレッジ縮小なし）+ `make nuclei-auth`。**残: ローカルで `make juiceshop-up` → `make nuclei-auth` 実走 PASS 確認**（nuclei-templates 導入環境が必要）
+- **スコア計算: 完了**（#12）— `api/internal/report/score.go`（`Compute`/`Score`/`Band`/`Delta`・§5.1 の式・[0,100] クランプ・色は Band で frontend にマップ・unit 100%）
+- **ダッシュボード集計 backend: 完了**（#13）— `api/internal/report/`（`dashboard.go` 純粋集計 / `repository.go` / `service.go`）+ `handler/dashboard.go`（`GET /sites/:id/dashboard`：最新スコア＋前回差分＋スコア時系列）+ sqlc `ListDoneScanSummaries`。**残: frontend（Chart.js 描画・別セッション）**
+- **次タスク候補**: W3 ハードニング（クロスホスト redirect 認証ヘッダ漏えい・下記 backlog）/ findings 詳細レポート API / web (Nuxt) スキャフォールド（別セッション）
 - sqlc: **v1.31.1** / river: **v0.39.0** / **Nuclei SDK: v3.9.0（go.mod 固定）**
 - モジュール構成: api / worker / jobs / **secrets（認証情報暗号化・依存ゼロ・ADR-0003）** の4モジュール（go.work + replace）
 - リモート: `ymd38/goodast`（**private**）
@@ -196,11 +192,13 @@
 
 ## 直近のアクション（resume ポイント）
 
-1. `test/0006-nuclei-cli-parity` の PR 作成 → マージ
-2. **ADR-0003 認証情報のアプリ層暗号化** → api に credential 受付＋暗号化保存（`scan_credentials.enc_headers`）、worker に credential ロード＋復号＋ヘッダ注入（`engine.ScanRequest` にヘッダ受け口を追加し session スキャンを通す）。完了後 §10-3 の認証後スキャン検証（Cookie 持込で finding 増）を parity テストに追加
-3. 検知精度 検証（未認証）は完了: `make juiceshop-up` → `make nuclei-parity`（`NUCLEI_TEST_TARGET`/`NUCLEI_TEST_TAGS` 上書き可）
-4. **§10-3 認証後スキャン検証を実装済み**（`auth_integration_test.go` / `make nuclei-auth`）。コンパイル・vet・unit・skip 経路は確認済み。**残: ローカルで `make juiceshop-up` → `make nuclei-auth` の実走 PASS 確認**（nuclei-templates 未導入環境ではテンプレ取得が走る）。その後 PR 作成
-5. 次タスク候補: **W3 ハードニング**（クロスホスト redirect の認証ヘッダ漏えい）→ スコア計算（`internal/report`）→ web スキャフォールド
+- **未検証で残っている実走確認**:
+  1. **§10-3 認証後スキャン**: `make juiceshop-up` → `make nuclei-auth`（`NUCLEI_TEST_TARGET`/`NUCLEI_TEST_TAGS` 上書き可）でローカル PASS 確認。nuclei-templates 導入環境が必要
+  2. **API→worker 一気通貫（実 SDK スキャン）**: 自動テストは区間分割（engine 実体 / river・DB・注入到達を fakeEngine / API enqueue）。全経路は api+worker 起動＋curl で手動確認（web UI 実装後に画面から検証予定）
+- **次タスク候補（backend セッション）**:
+  1. **W3 ハードニング**: クロスホスト redirect の認証ヘッダ漏えい（下記 backlog / ADR-0002 持ち越し）。custom transport + redirect ポリシー
+  2. **findings 詳細レポート API**: `GET /scans/:id/findings` 等（レポート画面の入力）
+  3. **web (Nuxt) スキャフォールド**（別セッション）→ ダッシュボード描画（Chart.js・`GET /sites/:id/dashboard` を消費）
 
 ### ADR-0002 の持ち越し / 留意点
 - **【要ハードニング / 認証スキャンで顕在化】クロスホスト redirect での認証ヘッダ漏えい（PR #10 W3）**: `WithHeaders` は SDK 全リクエストにヘッダを付与するが、SDK はリクエスト時の host/path allowlist 強制手段（redirect 制御 option 関数）を持たない。テンプレートが redirects を有効化しクロスホスト redirect が起きると Cookie/Bearer が意図しないホストへ送られ得る。**恒久対策 = クロール/認証スキャン用の custom transport + redirect ポリシー**（既存の「リクエスト時 host 遮断」持ち越しと同一。認証注入導入で優先度上昇）。現状の緩和: 単一ターゲット・非クロール（katana 無効）・破壊的/intrusive タグ除外で逸脱経路を限定。
