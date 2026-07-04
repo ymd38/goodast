@@ -19,6 +19,9 @@ type Querier interface {
 	GetScanCredentials(ctx context.Context, siteID pgtype.UUID) (GetScanCredentialsRow, error)
 	GetSiteByID(ctx context.Context, id pgtype.UUID) (Site, error)
 	GetSiteByName(ctx context.Context, name string) (Site, error)
+	// ダッシュボードのスコア時系列用。完了かつ summary_json を持つスキャンのみを
+	// 日付昇順（折れ線 左→右）で返す。スコアは呼び出し側（report）で summary から算出する。
+	ListDoneScanSummaries(ctx context.Context, siteID pgtype.UUID) ([]ListDoneScanSummariesRow, error)
 	ListScansBySite(ctx context.Context, siteID pgtype.UUID) ([]Scan, error)
 	ListSites(ctx context.Context) ([]Site, error)
 	MarkSiteVerified(ctx context.Context, id pgtype.UUID) (Site, error)

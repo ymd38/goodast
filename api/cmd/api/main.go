@@ -24,6 +24,7 @@ import (
 	"github.com/ymd38/goodast/api/internal/credential"
 	"github.com/ymd38/goodast/api/internal/db"
 	"github.com/ymd38/goodast/api/internal/handler"
+	"github.com/ymd38/goodast/api/internal/report"
 	"github.com/ymd38/goodast/api/internal/scan"
 	"github.com/ymd38/goodast/api/internal/site"
 	"github.com/ymd38/goodast/secrets"
@@ -60,9 +61,12 @@ func run() error {
 		site.NewService,
 		credential.NewRepository,
 		credential.NewService,
+		report.NewRepository,
+		report.NewService,
 		handler.NewSiteHandler,
 		handler.NewScanHandler,
 		handler.NewCredentialHandler,
+		handler.NewDashboardHandler,
 		newRouter,
 		newServer,
 	}
@@ -118,6 +122,7 @@ type routerDeps struct {
 	Site       *handler.SiteHandler
 	Scan       *handler.ScanHandler
 	Credential *handler.CredentialHandler
+	Dashboard  *handler.DashboardHandler
 	Logger     *slog.Logger
 }
 
@@ -135,6 +140,7 @@ func newRouter(d routerDeps) *gin.Engine {
 	d.Site.RegisterRoutes(r)
 	d.Scan.RegisterRoutes(r)
 	d.Credential.RegisterRoutes(r)
+	d.Dashboard.RegisterRoutes(r)
 
 	// liveness: プロセス死活のみ。DB は見ない。
 	r.GET("/healthz", func(c *gin.Context) {

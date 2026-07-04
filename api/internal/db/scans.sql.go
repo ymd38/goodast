@@ -53,6 +53,47 @@ func (q *Queries) GetScan(ctx context.Context, id pgtype.UUID) (Scan, error) {
 	return i, err
 }
 
+const listDoneScanSummaries = `-- name: ListDoneScanSummaries :many
+SELECT id, created_at, finished_at, summary_json
+FROM scans
+WHERE site_id = $1 AND status = 'done' AND summary_json IS NOT NULL
+ORDER BY created_at ASC
+`
+
+type ListDoneScanSummariesRow struct {
+	ID          pgtype.UUID        `json:"id"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	FinishedAt  pgtype.Timestamptz `json:"finished_at"`
+	SummaryJson []byte             `json:"summary_json"`
+}
+
+// ダッシュボードのスコア時系列用。完了かつ summary_json を持つスキャンのみを
+// 日付昇順（折れ線 左→右）で返す。スコアは呼び出し側（report）で summary から算出する。
+func (q *Queries) ListDoneScanSummaries(ctx context.Context, siteID pgtype.UUID) ([]ListDoneScanSummariesRow, error) {
+	rows, err := q.db.Query(ctx, listDoneScanSummaries, siteID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListDoneScanSummariesRow
+	for rows.Next() {
+		var i ListDoneScanSummariesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.CreatedAt,
+			&i.FinishedAt,
+			&i.SummaryJson,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listScansBySite = `-- name: ListScansBySite :many
 SELECT id, site_id, status, engine_version, started_at, finished_at, summary_json, created_at FROM scans
 WHERE site_id = $1
