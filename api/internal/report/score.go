@@ -67,9 +67,12 @@ type Score struct {
 //
 //	スコア = max(0, 100 − (Critical×40 + High×10 + Medium×3 + Low×1))
 //
-// 減点は非負・上限は 100 のため結果は常に 0〜100 に収まる（不変条件を式が保証）。
+// 正常な入力（非負カウント）では 100 − 非負 なので上限側は自明だが、DB/JSON 不整合で
+// 負数カウントが混入した場合や桁あふれで 100 を超え得る。値オブジェクトの不変条件 [0,100] を
+// 入力前提に依存せず守るため、下限・上限の両方をクランプする（防御的）。
 func Compute(counts SeverityCounts) Score {
-	return Score{v: max(scoreMin, scoreMax-counts.deduction())}
+	v := scoreMax - counts.deduction()
+	return Score{v: min(scoreMax, max(scoreMin, v))}
 }
 
 // NewScore は外部の int（DB 保存値・API 入力等）から Score を復元する。

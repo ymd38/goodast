@@ -19,6 +19,7 @@ func TestCompute(t *testing.T) {
 		{"Critical 3件は 0 にクランプ（負にならない）", SeverityCounts{Critical: 3}, 0},
 		{"大量 findings でも 0 止まり", SeverityCounts{Critical: 10, High: 10}, 0},
 		{"Total は計算に影響しない", SeverityCounts{Low: 1, Total: 99}, 99},
+		{"負数カウント混入は 100 にクランプ（不変条件を守る）", SeverityCounts{Critical: -1}, 100},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
