@@ -42,6 +42,16 @@ func (s *Service) ScanState(ctx context.Context, scanID uuid.UUID) (ScanState, e
 	return state, nil
 }
 
+// SiteScans はサイトの診断履歴（全スキャンを新しい順）を返す（§6.5）。
+// スキャンが無い（未知サイト含む）場合は空スライスを返す。
+func (s *Service) SiteScans(ctx context.Context, siteID uuid.UUID) ([]ScanState, error) {
+	scans, err := s.repo.ListSiteScans(ctx, siteID)
+	if err != nil {
+		return nil, fmt.Errorf("list site scans: %w", err)
+	}
+	return scans, nil
+}
+
 // ScanFindings は scan の findings 明細を返す。scan が存在しなければ ErrScanNotFound を返す
 // （findings が 0 件なのか scan 自体が無いのかを区別する）。
 func (s *Service) ScanFindings(ctx context.Context, scanID uuid.UUID) ([]Finding, error) {
