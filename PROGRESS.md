@@ -17,7 +17,8 @@
 - **§10-3 認証後スキャン検証: 完了**（#11）— `worker/internal/engine/nuclei/auth_integration_test.go`（`TestNucleiHeaderInjection` 決定的注入証明 / `TestNucleiAuthenticatedCoverage` カバレッジ縮小なし）+ `make nuclei-auth`。**残: ローカルで `make juiceshop-up` → `make nuclei-auth` 実走 PASS 確認**（nuclei-templates 導入環境が必要）
 - **スコア計算: 完了**（#12）— `api/internal/report/score.go`（`Compute`/`Score`/`Band`/`Delta`・§5.1 の式・[0,100] クランプ・色は Band で frontend にマップ・unit 100%）
 - **ダッシュボード集計 backend: 完了**（#13）— `api/internal/report/`（`dashboard.go` 純粋集計 / `repository.go` / `service.go`）+ `handler/dashboard.go`（`GET /sites/:id/dashboard`：最新スコア＋前回差分＋スコア時系列）+ sqlc `ListDoneScanSummaries`。**残: frontend（Chart.js 描画・別セッション）**
-- **次タスク候補**: W3 ハードニング（クロスホスト redirect 認証ヘッダ漏えい・下記 backlog）/ findings 詳細レポート API / web (Nuxt) スキャフォールド（別セッション）
+- **スキャン結果 API（状態/明細分離）: 完了**（作業ブランチ）— `handler/scan_result.go`（`report.Service` 依存）: `GET /scans/:id`（状態＝status＋summary＋score・診断中は 200＋status で進捗提示・summary は done で非 nil）/ `GET /scans/:id/findings`（明細＝重大度順）。404 は scan 不在時のみ。sqlc `ListFindingsByScan`・`ScanExists`。**残: frontend（結果レポート画面・別セッション）**
+- **次タスク候補**: W3 ハードニング（クロスホスト redirect 認証ヘッダ漏えい・下記 backlog）/ web (Nuxt) スキャフォールド（別セッション）
 - sqlc: **v1.31.1** / river: **v0.39.0** / **Nuclei SDK: v3.9.0（go.mod 固定）**
 - モジュール構成: api / worker / jobs / **secrets（認証情報暗号化・依存ゼロ・ADR-0003）** の4モジュール（go.work + replace）
 - リモート: `ymd38/goodast`（**private**）
@@ -82,6 +83,13 @@
     - `repository.go`（summary_json→SeverityCounts デコード境界・Date は finished_at 優先）/ `service.go`（gin 非依存）/ `handler/dashboard.go`（uuid 400 / スキャン無し=200＋latest:null・history:[]）
     - 結合テスト（throwaway PG）で 400・空・集計＋除外（queued / summary_json NULL）を検証。実 DB 実走 PASS
   - **残（frontend・別セッション）**: Chart.js の折れ線（スコア時系列）＋積み上げ棒（重大度別）・上段サマリカード描画
+- [~] スキャン結果 API（§6.3 進捗 / §6.4 結果レポートの backend）
+  - **backend 完了**（`api/internal/report/scan_result.go` + `handler/scan_result.go`）: 状態と明細を分離
+    - `GET /scans/:id`（状態）: status＋summary（counts＋score/band/label）。診断はバックグラウンド実行のため**scan が存在する限り 200＋status で進捗提示**（queued/running）、summary は done で非 nil。進捗ポーリング兼用
+    - `GET /scans/:id/findings`（明細）: findings を重大度順（Critical→Info・SQL CASE）。クリーン（0件）は 200＋空配列
+    - **404 は scan 行が無いときのみ**（不在／未完了／クリーンは 404 と status で区別）。不正 uuid=400
+    - sqlc `ListFindingsByScan`・`ScanExists`（状態は既存 `GetScan` 再利用）。純粋ヘルパ `buildScanSummary` unit 100%。結合テスト（throwaway PG・8ケース）実 DB 実走 PASS
+  - **残（frontend・別セッション）**: 結果レポート画面（重大度カラー・CWE・検出URL・修正方法・専門家相談導線）、進捗表示
 
 ### Public 化の条件（PoC完了後）
 - [ ] 安全ガードレール（ADR-0004 / スコープ allowlist / 危険パス除外）実装済

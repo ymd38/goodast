@@ -54,6 +54,82 @@ func scanDate(row db.ListDoneScanSummariesRow) time.Time {
 	return row.CreatedAt.Time
 }
 
+// GetScanState は scan 1 件の状態（status＋サマリ）を返す。summary_json を持つ（done）場合は
+// スコアを算出して Summary に載せ、未完了なら Summary は nil にする。
+// scan が存在しない場合は pgx.ErrNoRows をラップして返す（service が ErrScanNotFound へ翻訳）。
+func (r *Repository) GetScanState(ctx context.Context, id uuid.UUID) (ScanState, error) {
+	row, err := r.q.GetScan(ctx, pgUUID(id))
+	if err != nil {
+		return ScanState{}, fmt.Errorf("get scan: %w", err)
+	}
+
+	state := ScanState{
+		ID:            uuid.UUID(row.ID.Bytes).String(),
+		SiteID:        uuid.UUID(row.SiteID.Bytes).String(),
+		Status:        row.Status,
+		EngineVersion: textValue(row.EngineVersion),
+		CreatedAt:     row.CreatedAt.Time,
+		StartedAt:     timePtr(row.StartedAt),
+		FinishedAt:    timePtr(row.FinishedAt),
+	}
+	if len(row.SummaryJson) > 0 {
+		var counts SeverityCounts
+		if err := json.Unmarshal(row.SummaryJson, &counts); err != nil {
+			return ScanState{}, fmt.Errorf("decode summary_json (scan %s): %w", state.ID, err)
+		}
+		summary := buildScanSummary(counts)
+		state.Summary = &summary
+	}
+	return state, nil
+}
+
+// ScanExists は scan 行の存在確認を返す（findings エンドポイントの 404 判定用）。
+func (r *Repository) ScanExists(ctx context.Context, id uuid.UUID) (bool, error) {
+	exists, err := r.q.ScanExists(ctx, pgUUID(id))
+	if err != nil {
+		return false, fmt.Errorf("scan exists: %w", err)
+	}
+	return exists, nil
+}
+
+// ScanFindings は scan の findings 明細を重大度順で返す。
+func (r *Repository) ScanFindings(ctx context.Context, id uuid.UUID) ([]Finding, error) {
+	rows, err := r.q.ListFindingsByScan(ctx, pgUUID(id))
+	if err != nil {
+		return nil, fmt.Errorf("list findings by scan: %w", err)
+	}
+	findings := make([]Finding, 0, len(rows))
+	for _, row := range rows {
+		findings = append(findings, Finding{
+			ID:          uuid.UUID(row.ID.Bytes).String(),
+			TemplateID:  row.TemplateID,
+			Title:       row.Title,
+			Severity:    row.Severity,
+			URL:         row.Url,
+			CWE:         textValue(row.Cwe),
+			Remediation: textValue(row.Remediation),
+			Status:      row.Status,
+		})
+	}
+	return findings, nil
+}
+
+// textValue は nullable な pgtype.Text を string に変換する（NULL は ""）。
+func textValue(t pgtype.Text) string {
+	if t.Valid {
+		return t.String
+	}
+	return ""
+}
+
+// timePtr は nullable な pgtype.Timestamptz を *time.Time に変換する（NULL は nil）。
+func timePtr(t pgtype.Timestamptz) *time.Time {
+	if t.Valid {
+		return &t.Time
+	}
+	return nil
+}
+
 // pgUUID は uuid.UUID を pgtype.UUID に変換する（クエリ引数用）。
 func pgUUID(id uuid.UUID) pgtype.UUID {
 	return pgtype.UUID{Bytes: id, Valid: true}
