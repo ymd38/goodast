@@ -228,6 +228,9 @@
 - Makefile 整備済み（`make help`）。Juice Shop は `make juiceshop-up`（compose profile・loopback :3001）、
   実スキャン確認は `make nuclei-scan`（`NUCLEI_TEST_TARGET` / `NUCLEI_TEST_TAGS`）。テンプレ取得は `make nuclei-templates`。
   認証後スキャン検証（§10-3）は `make nuclei-auth`（ヘッダ注入の到達 + 認証カバレッジ縮小なし）
+- **OpenAPI(Swagger)**: handler の swaggo 注釈から `make swagger` で `api/internal/docs`（swagger.json/yaml）を生成。
+  API サーバ起動中は `GET /swagger/index.html` で UI 配信。**API 変更時は pre-commit hook が自動再生成**（`make setup` で `core.hooksPath=.githooks` 有効化）。
+  **frontend は `api/internal/docs/swagger.yaml` を正として `openapi-typescript` で型付きクライアントを生成する**（別セッション）。swag/gin-swagger のバージョンは Makefile `SWAG_VERSION` と go.mod で固定。
 
 ---
 

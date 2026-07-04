@@ -1,0 +1,613 @@
+basePath: /
+definitions:
+  github_com_ymd38_goodast_api_internal_report.Band:
+    enum:
+    - good
+    - caution
+    - danger
+    - crisis
+    type: string
+    x-enum-comments:
+      BandCaution: 要注意（60〜79）→ --color-warning
+      BandCrisis: 危機（0〜39）→ --color-m-red + opacity 強調
+      BandDanger: 危険（40〜59）→ --color-m-red
+      BandGood: 良好（80〜100）→ --color-success
+    x-enum-descriptions:
+    - 良好（80〜100）→ --color-success
+    - 要注意（60〜79）→ --color-warning
+    - 危険（40〜59）→ --color-m-red
+    - 危機（0〜39）→ --color-m-red + opacity 強調
+    x-enum-varnames:
+    - BandGood
+    - BandCaution
+    - BandDanger
+    - BandCrisis
+  github_com_ymd38_goodast_api_internal_report.DashboardData:
+    properties:
+      history:
+        items:
+          $ref: '#/definitions/github_com_ymd38_goodast_api_internal_report.HistoryEntry'
+        type: array
+      latest:
+        $ref: '#/definitions/github_com_ymd38_goodast_api_internal_report.LatestState'
+    type: object
+  github_com_ymd38_goodast_api_internal_report.Finding:
+    properties:
+      cwe:
+        type: string
+      id:
+        type: string
+      remediation:
+        type: string
+      severity:
+        type: string
+      status:
+        type: string
+      template_id:
+        type: string
+      title:
+        type: string
+      url:
+        type: string
+    type: object
+  github_com_ymd38_goodast_api_internal_report.HistoryEntry:
+    properties:
+      band:
+        $ref: '#/definitions/github_com_ymd38_goodast_api_internal_report.Band'
+      counts:
+        $ref: '#/definitions/github_com_ymd38_goodast_api_internal_report.SeverityCounts'
+      date:
+        type: string
+      scan_id:
+        type: string
+      score:
+        type: integer
+    type: object
+  github_com_ymd38_goodast_api_internal_report.LatestState:
+    properties:
+      band:
+        $ref: '#/definitions/github_com_ymd38_goodast_api_internal_report.Band'
+      counts:
+        $ref: '#/definitions/github_com_ymd38_goodast_api_internal_report.SeverityCounts'
+      date:
+        type: string
+      delta:
+        type: integer
+      label:
+        type: string
+      scan_id:
+        type: string
+      score:
+        type: integer
+    type: object
+  github_com_ymd38_goodast_api_internal_report.ScanState:
+    properties:
+      created_at:
+        type: string
+      engine_version:
+        type: string
+      finished_at:
+        type: string
+      id:
+        type: string
+      site_id:
+        type: string
+      started_at:
+        type: string
+      status:
+        type: string
+      summary:
+        $ref: '#/definitions/github_com_ymd38_goodast_api_internal_report.ScanSummary'
+    type: object
+  github_com_ymd38_goodast_api_internal_report.ScanSummary:
+    properties:
+      band:
+        $ref: '#/definitions/github_com_ymd38_goodast_api_internal_report.Band'
+      counts:
+        $ref: '#/definitions/github_com_ymd38_goodast_api_internal_report.SeverityCounts'
+      label:
+        type: string
+      score:
+        type: integer
+    type: object
+  github_com_ymd38_goodast_api_internal_report.SeverityCounts:
+    properties:
+      critical:
+        type: integer
+      high:
+        type: integer
+      info:
+        type: integer
+      low:
+        type: integer
+      medium:
+        type: integer
+      total:
+        type: integer
+    type: object
+  internal_handler.ErrorResponse:
+    properties:
+      error:
+        example: invalid site id
+        type: string
+    type: object
+  internal_handler.credentialStatusResponse:
+    properties:
+      auth_mode:
+        type: string
+      configured:
+        type: boolean
+      created_at:
+        type: string
+    type: object
+  internal_handler.findingsResponse:
+    properties:
+      findings:
+        items:
+          $ref: '#/definitions/github_com_ymd38_goodast_api_internal_report.Finding'
+        type: array
+      scan_id:
+        type: string
+    type: object
+  internal_handler.headerInput:
+    properties:
+      name:
+        type: string
+      value:
+        type: string
+    required:
+    - name
+    - value
+    type: object
+  internal_handler.registerSiteRequest:
+    properties:
+      base_url:
+        type: string
+      name:
+        type: string
+      verify_method:
+        type: string
+    required:
+    - base_url
+    - name
+    type: object
+  internal_handler.scanHistoryResponse:
+    properties:
+      scans:
+        items:
+          $ref: '#/definitions/github_com_ymd38_goodast_api_internal_report.ScanState'
+        type: array
+      site_id:
+        type: string
+    type: object
+  internal_handler.setCredentialsRequest:
+    properties:
+      headers:
+        items:
+          $ref: '#/definitions/internal_handler.headerInput'
+        minItems: 1
+        type: array
+    required:
+    - headers
+    type: object
+  internal_handler.siteResponse:
+    properties:
+      base_url:
+        type: string
+      created_at:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      ownership_verified:
+        type: boolean
+      verification:
+        $ref: '#/definitions/internal_handler.verificationGuide'
+      verify_method:
+        type: string
+      verify_token:
+        type: string
+    type: object
+  internal_handler.startScanRequest:
+    properties:
+      site_id:
+        type: string
+    required:
+    - site_id
+    type: object
+  internal_handler.startScanResponse:
+    properties:
+      scan_id:
+        type: string
+      status:
+        type: string
+    type: object
+  internal_handler.verificationGuide:
+    properties:
+      dns_record:
+        type: string
+      file_content:
+        type: string
+      file_path:
+        type: string
+      method:
+        type: string
+    type: object
+info:
+  contact: {}
+  description: |-
+    UI起点・初心者向け OSS DAST（Nuclei ラッパー）の API。スキャン受付・サイト管理・ドメイン所有確認・認証情報の暗号化保管・ダッシュボード/レポート用データ提供。
+    認証情報の生値はレスポンスに一切含めない（マスク）。スキャン実行は worker プロセスに分離（ADR-0001）。
+  title: goodast API
+  version: 0.1.0
+paths:
+  /scans:
+    post:
+      consumes:
+      - application/json
+      description: site_id のスキャンを enqueue する（worker が非同期実行）。所有確認前は 403。202 で scan_id/status=queued
+        を返す。
+      parameters:
+      - description: スキャン対象サイト
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handler.startScanRequest'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/internal_handler.startScanResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_handler.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_handler.ErrorResponse'
+      summary: スキャンを開始
+      tags:
+      - scans
+  /scans/{id}:
+    get:
+      description: スキャンの status とサマリ（done は score/band/counts、未完了は summary=null）を返す。進捗ポーリング兼用。
+      parameters:
+      - description: Scan ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_ymd38_goodast_api_internal_report.ScanState'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_handler.ErrorResponse'
+      summary: スキャン状態を取得
+      tags:
+      - scans
+  /scans/{id}/findings:
+    get:
+      description: findings を重大度の重い順（Critical→Info）で返す。クリーン（0件）は空配列、scan 不在は 404。
+      parameters:
+      - description: Scan ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_handler.findingsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_handler.ErrorResponse'
+      summary: スキャンの findings 明細を取得
+      tags:
+      - scans
+  /sites:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/internal_handler.siteResponse'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_handler.ErrorResponse'
+      summary: サイト一覧を取得
+      tags:
+      - sites
+    post:
+      consumes:
+      - application/json
+      description: サイト名とベース URL を登録。非ローカルは所有確認トークン＋設置ガイドを返す。localhost 等は即 verified。
+      parameters:
+      - description: サイト登録
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handler.registerSiteRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_handler.siteResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_handler.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_handler.ErrorResponse'
+      summary: サイトを登録
+      tags:
+      - sites
+  /sites/{id}:
+    get:
+      parameters:
+      - description: Site ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_handler.siteResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_handler.ErrorResponse'
+      summary: サイト詳細を取得
+      tags:
+      - sites
+  /sites/{id}/credentials:
+    delete:
+      parameters:
+      - description: Site ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_handler.ErrorResponse'
+      summary: 認証情報を削除
+      tags:
+      - credentials
+    get:
+      description: auth_mode と configured を返す（生値は含めない）。
+      parameters:
+      - description: Site ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_handler.credentialStatusResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_handler.ErrorResponse'
+      summary: 認証情報の状態を取得
+      tags:
+      - credentials
+    put:
+      consumes:
+      - application/json
+      description: 持ち込みセッション（ヘッダ）をアプリ層で暗号化保存（ADR-0003）。生値はレスポンスに含めない。
+      parameters:
+      - description: Site ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 認証ヘッダ
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handler.setCredentialsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_handler.credentialStatusResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_handler.ErrorResponse'
+      summary: 認証情報を設定
+      tags:
+      - credentials
+  /sites/{id}/dashboard:
+    get:
+      description: 最新スコア＋前回差分＋スコア時系列（done スキャンのみ）。スキャン無し/未知サイトは 200＋latest=null・history=[]。
+      parameters:
+      - description: Site ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_ymd38_goodast_api_internal_report.DashboardData'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_handler.ErrorResponse'
+      summary: サイトのダッシュボード集計を取得
+      tags:
+      - dashboard
+  /sites/{id}/scans:
+    get:
+      description: サイトの過去スキャンを新しい順で返す（全 status）。各エントリは GET /scans/{id} と同形。未知サイトは
+        200＋scans=[]。
+      parameters:
+      - description: Site ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_handler.scanHistoryResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_handler.ErrorResponse'
+      summary: サイトの診断履歴を取得
+      tags:
+      - dashboard
+  /sites/{id}/verify:
+    post:
+      description: 設置済みトークンを検証する。未達（未設置・不一致）は 422。成功で ownership_verified=true。
+      parameters:
+      - description: Site ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_handler.siteResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_handler.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/internal_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_handler.ErrorResponse'
+      summary: ドメイン所有確認を実行
+      tags:
+      - sites
+schemes:
+- http
+swagger: "2.0"

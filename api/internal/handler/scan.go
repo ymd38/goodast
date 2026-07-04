@@ -45,6 +45,19 @@ type startScanResponse struct {
 }
 
 // start はスキャンを受け付ける。enqueue のみで実行完了を待たないため 202 Accepted を返す。
+//
+// @Summary      スキャンを開始
+// @Description  site_id のスキャンを enqueue する（worker が非同期実行）。所有確認前は 403。202 で scan_id/status=queued を返す。
+// @Tags         scans
+// @Accept       json
+// @Produce      json
+// @Param        request  body      startScanRequest   true  "スキャン対象サイト"
+// @Success      202      {object}  startScanResponse
+// @Failure      400      {object}  handler.ErrorResponse
+// @Failure      403      {object}  handler.ErrorResponse
+// @Failure      404      {object}  handler.ErrorResponse
+// @Failure      500      {object}  handler.ErrorResponse
+// @Router       /scans [post]
 func (h *ScanHandler) start(c *gin.Context) {
 	var req startScanRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
