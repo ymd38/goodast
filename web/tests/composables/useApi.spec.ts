@@ -21,6 +21,7 @@ describe('useApiClient', () => {
     expect(error).toBeUndefined()
     expect(data).toEqual([])
     expect(fetchMock).toHaveBeenCalledTimes(1)
+    // openapi-fetch は Request オブジェクトを構築して fetch(request) を呼ぶため、この cast は実行時に安全
     const request = fetchMock.mock.calls[0][0] as Request
     expect(request.url).toContain('/api/sites')
   })
