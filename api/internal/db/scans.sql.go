@@ -130,3 +130,15 @@ func (q *Queries) ListScansBySite(ctx context.Context, siteID pgtype.UUID) ([]Sc
 	}
 	return items, nil
 }
+
+const scanExists = `-- name: ScanExists :one
+SELECT EXISTS(SELECT 1 FROM scans WHERE id = $1)
+`
+
+// scan の存在確認（findings エンドポイントの 404 判定用・summary_json bytea を引かない軽量確認）。
+func (q *Queries) ScanExists(ctx context.Context, id pgtype.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, scanExists, id)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}

@@ -67,6 +67,7 @@ func run() error {
 		handler.NewScanHandler,
 		handler.NewCredentialHandler,
 		handler.NewDashboardHandler,
+		handler.NewScanResultHandler,
 		newRouter,
 		newServer,
 	}
@@ -123,6 +124,7 @@ type routerDeps struct {
 	Scan       *handler.ScanHandler
 	Credential *handler.CredentialHandler
 	Dashboard  *handler.DashboardHandler
+	ScanResult *handler.ScanResultHandler
 	Logger     *slog.Logger
 }
 
@@ -141,6 +143,7 @@ func newRouter(d routerDeps) *gin.Engine {
 	d.Scan.RegisterRoutes(r)
 	d.Credential.RegisterRoutes(r)
 	d.Dashboard.RegisterRoutes(r)
+	d.ScanResult.RegisterRoutes(r)
 
 	// liveness: プロセス死活のみ。DB は見ない。
 	r.GET("/healthz", func(c *gin.Context) {

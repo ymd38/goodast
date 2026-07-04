@@ -24,9 +24,14 @@ type Querier interface {
 	// 並び順は report が点の日時に採用する finished_at（無ければ created_at）と一致させ、
 	// バックフィルや順不同挿入でも history の順序と表示日時が食い違わないようにする。
 	ListDoneScanSummaries(ctx context.Context, siteID pgtype.UUID) ([]ListDoneScanSummariesRow, error)
+	// スキャン結果レポート（明細）用。重大度の重い順（Critical→Info）、同一 severity 内は
+	// 検出順（created_at 昇順）で返す。severity は DB CHECK で 5 値に固定。
+	ListFindingsByScan(ctx context.Context, scanID pgtype.UUID) ([]ListFindingsByScanRow, error)
 	ListScansBySite(ctx context.Context, siteID pgtype.UUID) ([]Scan, error)
 	ListSites(ctx context.Context) ([]Site, error)
 	MarkSiteVerified(ctx context.Context, id pgtype.UUID) (Site, error)
+	// scan の存在確認（findings エンドポイントの 404 判定用・summary_json bytea を引かない軽量確認）。
+	ScanExists(ctx context.Context, id pgtype.UUID) (bool, error)
 	// session 認証情報を site 単位で作成/更新する（ADR-0003）。auth_mode は session 固定。
 	// 「none」は行を作らず不在で表現するため、本クエリは session のみを扱う。
 	UpsertScanCredentials(ctx context.Context, arg UpsertScanCredentialsParams) error

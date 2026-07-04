@@ -6,6 +6,10 @@ RETURNING *;
 -- name: GetScan :one
 SELECT * FROM scans WHERE id = $1;
 
+-- name: ScanExists :one
+-- scan の存在確認（findings エンドポイントの 404 判定用・summary_json bytea を引かない軽量確認）。
+SELECT EXISTS(SELECT 1 FROM scans WHERE id = $1);
+
 -- name: ListScansBySite :many
 SELECT * FROM scans
 WHERE site_id = $1
