@@ -17,6 +17,7 @@ onMounted(() => {
 watch(
   () => props.config,
   (config) => {
+    // options は静的（palette は mount 時に解決済み）。動的にする場合は chart.options も更新すること
     chart.data = toRaw(config).data
     chart.update()
   },
