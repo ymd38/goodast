@@ -1,0 +1,38 @@
+{
+  "name": "goodast-web",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.12.1",
+  "scripts": {
+    "build": "nuxt build",
+    "dev": "nuxt dev",
+    "preview": "nuxt preview",
+    "postinstall": "nuxt prepare",
+    "lint": "eslint .",
+    "type-check": "nuxt typecheck",
+    "test": "vitest",
+    "gen:api": "swagger2openapi --patch --yaml --outfile .openapi/openapi3.yaml ../api/internal/docs/swagger.yaml && openapi-typescript .openapi/openapi3.yaml -o types/api.d.ts"
+  },
+  "dependencies": {
+    "@fontsource/inter": "^5.2.0",
+    "nuxt": "^3.17.0",
+    "openapi-fetch": "^0.14.0",
+    "vue": "^3.5.0",
+    "vue-router": "^4.5.0"
+  },
+  "devDependencies": {
+    "@nuxt/eslint": "^1.4.0",
+    "@nuxt/test-utils": "^3.19.0",
+    "@tailwindcss/vite": "^4.1.0",
+    "@vitest/coverage-istanbul": "^3.1.0",
+    "@vue/test-utils": "^2.4.6",
+    "eslint": "^9.28.0",
+    "happy-dom": "^17.4.0",
+    "openapi-typescript": "^7.8.0",
+    "swagger2openapi": "^7.0.8",
+    "tailwindcss": "^4.1.0",
+    "typescript": "^5.8.0",
+    "vitest": "^3.1.0",
+    "vue-tsc": "^2.2.0"
+  }
+}
