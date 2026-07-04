@@ -76,13 +76,13 @@ PR #18（swagger.yaml）はマージ済みのため、A は最新 main から分
 ### レイヤ分割（テスト戦略の要）
 
 - **`utils/chart-config.ts`（純粋関数）**: `buildScoreTrendConfig(history, palette)` / `buildSeverityStackConfig(history, palette)`。色はセマンティック名→実値の palette を**引数注入**し、jsdom で CSS 変数解決せずにテストできる形にする。unit 100%。
-- **`composables/useScoreBand.ts`（純粋）**: Band（`good`/`caution`/`danger`/`crisis`）→ トークンクラス名。frontend.md「セキュリティスコアの色分け」の実装。未知 Band は `muted` へフォールバック（前方互換）。
+- **`utils/score-band.ts`（純粋関数）**: Band（`good`/`caution`/`danger`/`crisis`）→ トークンクラス名 + delta 整形。frontend.md「セキュリティスコアの色分け」の実装。未知 Band は `muted` へフォールバック（前方互換）。※状態を持たないため composable でなく utils に置く。
 - **`components/dashboard/ChartCanvas.vue`（薄ラッパ）**: props の config で `new Chart()`（onMounted）/ 更新（watch）/ destroy（onUnmounted）のみ。テストは chart.js モック。
 - **`composables/useApiError.ts`**: API エラーハンドリング集約（frontend.md 指示）。画面にはエラーバンドで表示。
 
 ### エラー / エッジケース
 
-- 不正 site id・不在（400/404）→ `createError` で Nuxt 404 ページ。
+- 不正 site id・不在（400/404）→ 他のエラーと同じエラーバンドで backend のメッセージを表示（`fatal` な client エラーはテスト困難で PoC では過剰なため、専用 404 ページは作らない）。
 - ダッシュボード API はスキャン無し・未知サイトでも 200（latest=null / history=[]）→ 空状態表示で吸収。
 - API 疎通エラー → `useApiError` 経由の共通エラーバンド。
 
