@@ -18,9 +18,12 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
+	swaggerfiles "github.com/swaggo/files"
+	ginswagger "github.com/swaggo/gin-swagger"
 	"go.uber.org/dig"
 
 	"github.com/ymd38/goodast/api/internal/config"
+	_ "github.com/ymd38/goodast/api/internal/docs" // swaggo 生成の OpenAPI 定義（/swagger 配信用）
 	"github.com/ymd38/goodast/api/internal/credential"
 	"github.com/ymd38/goodast/api/internal/db"
 	"github.com/ymd38/goodast/api/internal/handler"
@@ -30,6 +33,12 @@ import (
 	"github.com/ymd38/goodast/secrets"
 )
 
+// @title           goodast API
+// @version         0.1.0
+// @description     UI起点・初心者向け OSS DAST（Nuclei ラッパー）の API。スキャン受付・サイト管理・ドメイン所有確認・認証情報の暗号化保管・ダッシュボード/レポート用データ提供。
+// @description     認証情報の生値はレスポンスに一切含めない（マスク）。スキャン実行は worker プロセスに分離（ADR-0001）。
+// @BasePath        /
+// @schemes         http
 func main() {
 	if err := run(); err != nil {
 		slog.Error("api terminated with error", "err", err)
@@ -144,6 +153,9 @@ func newRouter(d routerDeps) *gin.Engine {
 	d.Credential.RegisterRoutes(r)
 	d.Dashboard.RegisterRoutes(r)
 	d.ScanResult.RegisterRoutes(r)
+
+	// OpenAPI(Swagger) UI: 生成済み定義（internal/docs）を /swagger で配信する。
+	r.GET("/swagger/*any", ginswagger.WrapHandler(swaggerfiles.Handler))
 
 	// liveness: プロセス死活のみ。DB は見ない。
 	r.GET("/healthz", func(c *gin.Context) {

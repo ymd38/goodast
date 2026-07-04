@@ -65,6 +65,19 @@ type siteResponse struct {
 	CreatedAt         time.Time          `json:"created_at"`
 }
 
+// register はサイトを登録し、所有確認トークンと設置ガイドを返す（ローカル対象は即 verified）。
+//
+// @Summary      サイトを登録
+// @Description  サイト名とベース URL を登録。非ローカルは所有確認トークン＋設置ガイドを返す。localhost 等は即 verified。
+// @Tags         sites
+// @Accept       json
+// @Produce      json
+// @Param        request  body      registerSiteRequest  true  "サイト登録"
+// @Success      201      {object}  siteResponse
+// @Failure      400      {object}  handler.ErrorResponse
+// @Failure      409      {object}  handler.ErrorResponse
+// @Failure      500      {object}  handler.ErrorResponse
+// @Router       /sites [post]
 func (h *SiteHandler) register(c *gin.Context) {
 	var req registerSiteRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -104,6 +117,14 @@ func (h *SiteHandler) register(c *gin.Context) {
 	c.JSON(http.StatusCreated, toSiteResponse(created))
 }
 
+// list は登録済みサイトの一覧を返す。
+//
+// @Summary      サイト一覧を取得
+// @Tags         sites
+// @Produce      json
+// @Success      200  {array}   siteResponse
+// @Failure      500  {object}  handler.ErrorResponse
+// @Router       /sites [get]
 func (h *SiteHandler) list(c *gin.Context) {
 	sites, err := h.svc.List(c.Request.Context())
 	if err != nil {
@@ -117,6 +138,17 @@ func (h *SiteHandler) list(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
+// get は 1 サイトの詳細を返す。
+//
+// @Summary      サイト詳細を取得
+// @Tags         sites
+// @Produce      json
+// @Param        id   path      string  true  "Site ID (UUID)"
+// @Success      200  {object}  siteResponse
+// @Failure      400  {object}  handler.ErrorResponse
+// @Failure      404  {object}  handler.ErrorResponse
+// @Failure      500  {object}  handler.ErrorResponse
+// @Router       /sites/{id} [get]
 func (h *SiteHandler) get(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
@@ -131,6 +163,19 @@ func (h *SiteHandler) get(c *gin.Context) {
 	c.JSON(http.StatusOK, toSiteResponse(s))
 }
 
+// verify はドメイン所有確認（ファイル設置 / DNS TXT）を実行する。
+//
+// @Summary      ドメイン所有確認を実行
+// @Description  設置済みトークンを検証する。未達（未設置・不一致）は 422。成功で ownership_verified=true。
+// @Tags         sites
+// @Produce      json
+// @Param        id   path      string  true  "Site ID (UUID)"
+// @Success      200  {object}  siteResponse
+// @Failure      400  {object}  handler.ErrorResponse
+// @Failure      404  {object}  handler.ErrorResponse
+// @Failure      422  {object}  handler.ErrorResponse
+// @Failure      500  {object}  handler.ErrorResponse
+// @Router       /sites/{id}/verify [post]
 func (h *SiteHandler) verify(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {

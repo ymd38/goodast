@@ -54,6 +54,20 @@ type credentialStatusResponse struct {
 	CreatedAt  *string `json:"created_at,omitempty"`
 }
 
+// set はサイトの session 認証情報（持ち込み Cookie/Bearer）を暗号化保存する。
+//
+// @Summary      認証情報を設定
+// @Description  持ち込みセッション（ヘッダ）をアプリ層で暗号化保存（ADR-0003）。生値はレスポンスに含めない。
+// @Tags         credentials
+// @Accept       json
+// @Produce      json
+// @Param        id       path      string                  true  "Site ID (UUID)"
+// @Param        request  body      setCredentialsRequest   true  "認証ヘッダ"
+// @Success      200      {object}  credentialStatusResponse
+// @Failure      400      {object}  handler.ErrorResponse
+// @Failure      404      {object}  handler.ErrorResponse
+// @Failure      500      {object}  handler.ErrorResponse
+// @Router       /sites/{id}/credentials [put]
 func (h *CredentialHandler) set(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
@@ -74,6 +88,16 @@ func (h *CredentialHandler) set(c *gin.Context) {
 	c.JSON(http.StatusOK, credentialStatusResponse{AuthMode: "session", Configured: true})
 }
 
+// clear はサイトの認証情報を削除する（未認証スキャンに戻す）。
+//
+// @Summary      認証情報を削除
+// @Tags         credentials
+// @Param        id   path  string  true  "Site ID (UUID)"
+// @Success      204  "No Content"
+// @Failure      400  {object}  handler.ErrorResponse
+// @Failure      404  {object}  handler.ErrorResponse
+// @Failure      500  {object}  handler.ErrorResponse
+// @Router       /sites/{id}/credentials [delete]
 func (h *CredentialHandler) clear(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
@@ -87,6 +111,18 @@ func (h *CredentialHandler) clear(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
+// get は認証情報の設定状況（マスク・生値なし）を返す。
+//
+// @Summary      認証情報の状態を取得
+// @Description  auth_mode と configured を返す（生値は含めない）。
+// @Tags         credentials
+// @Produce      json
+// @Param        id   path      string  true  "Site ID (UUID)"
+// @Success      200  {object}  credentialStatusResponse
+// @Failure      400  {object}  handler.ErrorResponse
+// @Failure      404  {object}  handler.ErrorResponse
+// @Failure      500  {object}  handler.ErrorResponse
+// @Router       /sites/{id}/credentials [get]
 func (h *CredentialHandler) get(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {

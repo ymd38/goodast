@@ -1,0 +1,13 @@
+#!/bin/sh
+# API 注釈（handler / cmd/api/main.go）に変更があるコミットでは、OpenAPI(Swagger) を
+# 再生成して api/internal/docs をステージに含める。仕様とコードのドリフトを防ぐ。
+#
+# 有効化: make setup（または `git config core.hooksPath .githooks`）。
+set -e
+
+if git diff --cached --name-only \
+	| grep -qE '^api/internal/handler/.*\.go$|^api/cmd/api/main\.go$'; then
+	echo "pre-commit: OpenAPI を再生成します（make swagger）…"
+	make swagger >/dev/null
+	git add api/internal/docs
+fi

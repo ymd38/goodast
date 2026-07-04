@@ -23,8 +23,9 @@ help: ## このヘルプを表示する
 
 # ---- セットアップ ----
 .PHONY: setup
-setup: ## Go モジュール依存を取得する（web は未スキャフォールド）
+setup: ## Go モジュール依存を取得し git hooks を有効化する（web は未スキャフォールド）
 	@for m in $(GO_MODULES); do echo "==> $$m"; (cd $$m && go mod download); done
+	@git config core.hooksPath .githooks && echo "==> git hooks 有効化（.githooks）"
 
 # ---- DB / マイグレーション ----
 .PHONY: db-up
@@ -51,6 +52,12 @@ migrate-down: ## マイグレーションを1つ戻す（down 1）
 sqlc: ## sqlc 生成コードを再生成する（api / worker）
 	cd api && sqlc generate
 	cd worker && sqlc generate
+
+SWAG_VERSION ?= v1.16.6
+.PHONY: swagger
+swagger: ## OpenAPI(Swagger) を handler 注釈から再生成する（api/internal/docs）
+	cd api && go run github.com/swaggo/swag/cmd/swag@$(SWAG_VERSION) init \
+		-g cmd/api/main.go -o internal/docs --parseInternal --parseDependency --quiet
 
 # ---- 開発起動 ----
 .PHONY: dev-api

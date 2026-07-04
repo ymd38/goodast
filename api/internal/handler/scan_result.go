@@ -39,6 +39,17 @@ func (h *ScanResultHandler) RegisterRoutes(r gin.IRouter) {
 
 // getState はスキャンの状態（status＋サマリ）を返す。診断はバックグラウンド実行のため、
 // scan が存在する限り 200＋status（queued/running/…）で進捗を伝える。summary は done で非 nil。
+//
+// @Summary      スキャン状態を取得
+// @Description  スキャンの status とサマリ（done は score/band/counts、未完了は summary=null）を返す。進捗ポーリング兼用。
+// @Tags         scans
+// @Produce      json
+// @Param        id   path      string  true  "Scan ID (UUID)"
+// @Success      200  {object}  report.ScanState
+// @Failure      400  {object}  handler.ErrorResponse
+// @Failure      404  {object}  handler.ErrorResponse
+// @Failure      500  {object}  handler.ErrorResponse
+// @Router       /scans/{id} [get]
 func (h *ScanResultHandler) getState(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
@@ -61,6 +72,17 @@ func (h *ScanResultHandler) getState(c *gin.Context) {
 
 // getFindings はスキャンの findings 明細を重大度順で返す。findings 0 件（クリーン）は 200＋空配列、
 // scan 自体が無い場合のみ 404。
+//
+// @Summary      スキャンの findings 明細を取得
+// @Description  findings を重大度の重い順（Critical→Info）で返す。クリーン（0件）は空配列、scan 不在は 404。
+// @Tags         scans
+// @Produce      json
+// @Param        id   path      string  true  "Scan ID (UUID)"
+// @Success      200  {object}  handler.findingsResponse
+// @Failure      400  {object}  handler.ErrorResponse
+// @Failure      404  {object}  handler.ErrorResponse
+// @Failure      500  {object}  handler.ErrorResponse
+// @Router       /scans/{id}/findings [get]
 func (h *ScanResultHandler) getFindings(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
@@ -78,5 +100,5 @@ func (h *ScanResultHandler) getFindings(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"scan_id": id.String(), "findings": findings})
+	c.JSON(http.StatusOK, findingsResponse{ScanID: id.String(), Findings: findings})
 }

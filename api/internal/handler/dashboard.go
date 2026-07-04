@@ -38,6 +38,16 @@ func (h *DashboardHandler) RegisterRoutes(r gin.IRouter) {
 
 // get はサイトのダッシュボードデータ（最新スコア＋前回差分＋スコア時系列）を返す。
 // スキャンが無い（未知サイト含む）場合も 200 で latest=null・history=[] を返す。
+//
+// @Summary      サイトのダッシュボード集計を取得
+// @Description  最新スコア＋前回差分＋スコア時系列（done スキャンのみ）。スキャン無し/未知サイトは 200＋latest=null・history=[]。
+// @Tags         dashboard
+// @Produce      json
+// @Param        id   path      string  true  "Site ID (UUID)"
+// @Success      200  {object}  report.DashboardData
+// @Failure      400  {object}  handler.ErrorResponse
+// @Failure      500  {object}  handler.ErrorResponse
+// @Router       /sites/{id}/dashboard [get]
 func (h *DashboardHandler) get(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
@@ -56,6 +66,16 @@ func (h *DashboardHandler) get(c *gin.Context) {
 
 // listScans はサイトの診断履歴（全スキャンを新しい順）を返す（§6.5）。
 // スキャンが無い（未知サイト含む）場合も 200 で scans=[] を返す。
+//
+// @Summary      サイトの診断履歴を取得
+// @Description  サイトの過去スキャンを新しい順で返す（全 status）。各エントリは GET /scans/{id} と同形。未知サイトは 200＋scans=[]。
+// @Tags         dashboard
+// @Produce      json
+// @Param        id   path      string  true  "Site ID (UUID)"
+// @Success      200  {object}  handler.scanHistoryResponse
+// @Failure      400  {object}  handler.ErrorResponse
+// @Failure      500  {object}  handler.ErrorResponse
+// @Router       /sites/{id}/scans [get]
 func (h *DashboardHandler) listScans(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
@@ -69,5 +89,5 @@ func (h *DashboardHandler) listScans(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"site_id": id.String(), "scans": scans})
+	c.JSON(http.StatusOK, scanHistoryResponse{SiteID: id.String(), Scans: scans})
 }
