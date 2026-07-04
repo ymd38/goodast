@@ -79,7 +79,13 @@
   - `SeverityCounts` の json タグは worker の `summary_json`（engine.Summary）と一致 → ダッシュボードが DB 値をそのままデコード可能
   - テーブル駆動テストで境界値・クランプ（負数カウント含む）・全バンド・Delta・NewScore 範囲外を網羅。**unit 100%**・lint 0 issues
 - [ ] web (Nuxt) スキャフォールド → CI の frontend / pnpm-audit ジョブ有効化
-- [ ] ダッシュボード（スコア + 時系列・Chart.js）
+- [~] ダッシュボード（スコア + 時系列・Chart.js）
+  - **backend 集計 API 完了**（`api/internal/report/` + `handler/dashboard.go`）: `GET /sites/:id/dashboard`
+    - sqlc `ListDoneScanSummaries`（done かつ summary_json あり を日付昇順）を追加
+    - `dashboard.go`（純粋集計 `BuildDashboard`・unit 100%）: 最新スコア＋前回差分（初回は null）＋スコア時系列（history 昇順）。`Score`/`Band` を消費
+    - `repository.go`（summary_json→SeverityCounts デコード境界・Date は finished_at 優先）/ `service.go`（gin 非依存）/ `handler/dashboard.go`（uuid 400 / スキャン無し=200＋latest:null・history:[]）
+    - 結合テスト（throwaway PG）で 400・空・集計＋除外（queued / summary_json NULL）を検証。実 DB 実走 PASS
+  - **残（frontend・別セッション）**: Chart.js の折れ線（スコア時系列）＋積み上げ棒（重大度別）・上段サマリカード描画
 
 ### Public 化の条件（PoC完了後）
 - [ ] 安全ガードレール（ADR-0004 / スコープ allowlist / 危険パス除外）実装済
