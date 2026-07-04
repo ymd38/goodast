@@ -72,7 +72,12 @@
   - CLI ベースラインに goodast の `DefaultConfig` と同一フィルタ（tags / exclude dos,intrusive / rate 10/s）を適用し、`scope.Allows` で絞った集合を正とする。判定は template-id 集合の包含（欠落ゼロ）で担保（URL 多重度・件数の完全一致はステートフル対象で非決定的なためレポートのみ）
   - **結果（Juice Shop @localhost:3001・tags=misconfig,tech・nuclei v3.9.0）: PASS。distinct template-id 一致（goodast=4 / baseline in-scope=4・欠落0）**。検出: `fingerprinthub-web-fingerprints` / `http-missing-security-headers` / `owasp-juice-shop-detect` / `tech-detect`。findings 件数差（goodast 4 / baseline 13）は同一テンプレの URL 多重度による
   - 認証後スキャン（§10-3）の検証も追加済み: `auth_integration_test.go`（`TestNucleiHeaderInjection` 決定的注入証明 + `TestNucleiAuthenticatedCoverage` カバレッジ縮小なし）/ `make nuclei-auth`。実走 PASS 確認は残（ローカル `make juiceshop-up`）
-- [ ] スコア計算（`internal/report`）
+- [x] スコア計算（`api/internal/report/score.go`）※純粋ロジックのみ。ダッシュボード集計（DB/エンドポイント）は別項目
+  - §5.1 の式 `max(0, 100 − (Critical×40 + High×10 + Medium×3 + Low×1))` を `Compute(SeverityCounts) Score` で実装（Info は減点なし・上下限 [0,100] を防御的にクランプ）
+  - `Score` 値オブジェクト: `NewScore`（[0,100] 強制）/ `Value` / `Band`（good/caution/danger/crisis・境界 80/60/40）/ `Label`（良好/要注意/危険/危機）/ `Delta`（前回差分）
+  - 色は backend で持たず **Band（セマンティック）を返し frontend が tokens.css の CSS 変数へマップ**（責務分離）
+  - `SeverityCounts` の json タグは worker の `summary_json`（engine.Summary）と一致 → ダッシュボードが DB 値をそのままデコード可能
+  - テーブル駆動テストで境界値・クランプ（負数カウント含む）・全バンド・Delta・NewScore 範囲外を網羅。**unit 100%**・lint 0 issues
 - [ ] web (Nuxt) スキャフォールド → CI の frontend / pnpm-audit ジョブ有効化
 - [ ] ダッシュボード（スコア + 時系列・Chart.js）
 
