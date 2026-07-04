@@ -17,9 +17,10 @@
 - **§10-3 認証後スキャン検証: 完了**（#11）— `worker/internal/engine/nuclei/auth_integration_test.go`（`TestNucleiHeaderInjection` 決定的注入証明 / `TestNucleiAuthenticatedCoverage` カバレッジ縮小なし）+ `make nuclei-auth`。**残: ローカルで `make juiceshop-up` → `make nuclei-auth` 実走 PASS 確認**（nuclei-templates 導入環境が必要）
 - **スコア計算: 完了**（#12）— `api/internal/report/score.go`（`Compute`/`Score`/`Band`/`Delta`・§5.1 の式・[0,100] クランプ・色は Band で frontend にマップ・unit 100%）
 - **ダッシュボード集計 backend: 完了**（#13）— `api/internal/report/`（`dashboard.go` 純粋集計 / `repository.go` / `service.go`）+ `handler/dashboard.go`（`GET /sites/:id/dashboard`：最新スコア＋前回差分＋スコア時系列）+ sqlc `ListDoneScanSummaries`。**残: frontend（Chart.js 描画・別セッション）**
-- **スキャン結果 API（状態/明細分離）: 完了**（作業ブランチ）— `handler/scan_result.go`（`report.Service` 依存）: `GET /scans/:id`（状態＝status＋summary＋score・診断中は 200＋status で進捗提示・summary は done で非 nil）/ `GET /scans/:id/findings`（明細＝重大度順）。404 は scan 不在時のみ。sqlc `ListFindingsByScan`・`ScanExists`。**残: frontend（結果レポート画面・別セッション）**
-- **W3 ハードニング: 対応済み**（作業ブランチ）— 認証注入時のみ `DisableRedirects` でクロスホスト redirect の認証ヘッダ漏えいを遮断（統合テストで実 SDK 実証）
-- **次タスク候補**: web (Nuxt) スキャフォールド（別セッション）/ findings ステータス更新（false_positive 化）等
+- **スキャン結果 API（状態/明細分離）: 完了**（#15）— `handler/scan_result.go`（`report.Service` 依存）: `GET /scans/:id`（状態＝status＋summary＋score・診断中は 200＋status で進捗提示・summary は done で非 nil）/ `GET /scans/:id/findings`（明細＝重大度順）。404 は scan 不在時のみ。sqlc `ListFindingsByScan`・`ScanExists`。**残: frontend（結果レポート画面・別セッション）**
+- **W3 ハードニング: 対応済み**（#16）— 認証注入時のみ `DisableRedirects` でクロスホスト redirect の認証ヘッダ漏えいを遮断（統合テストで実 SDK 実証）
+- **診断履歴 API: 完了**（作業ブランチ）— `GET /sites/:id/scans`（全 status を新しい順・各エントリは `GET /scans/:id` と同形）。既存 `ListScansBySite` 再利用＋`toScanState` 抽出（DRY）。DashboardHandler 相乗り。未知サイト=200＋空。**残: frontend（診断履歴画面・別セッション）**
+- **backend の PoC 主要 API は出揃った**。次: **web (Nuxt) スキャフォールド → UI 描画**（別セッション推奨）。残 backend 小粒は findings ステータス更新（false_positive 化・PoC 表示系には不要・見送り中）
 - sqlc: **v1.31.1** / river: **v0.39.0** / **Nuclei SDK: v3.9.0（go.mod 固定）**
 - モジュール構成: api / worker / jobs / **secrets（認証情報暗号化・依存ゼロ・ADR-0003）** の4モジュール（go.work + replace）
 - リモート: `ymd38/goodast`（**private**）

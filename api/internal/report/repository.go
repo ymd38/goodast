@@ -62,7 +62,30 @@ func (r *Repository) GetScanState(ctx context.Context, id uuid.UUID) (ScanState,
 	if err != nil {
 		return ScanState{}, fmt.Errorf("get scan: %w", err)
 	}
+	return toScanState(row)
+}
 
+// ListSiteScans はサイトの全スキャンを新しい順で返す（§6.5 診断履歴）。
+// done/queued/running/failed を問わず含め、done は summary（スコア込み）を、未完了は nil を持つ。
+func (r *Repository) ListSiteScans(ctx context.Context, siteID uuid.UUID) ([]ScanState, error) {
+	rows, err := r.q.ListScansBySite(ctx, pgUUID(siteID))
+	if err != nil {
+		return nil, fmt.Errorf("list scans by site: %w", err)
+	}
+	scans := make([]ScanState, 0, len(rows))
+	for _, row := range rows {
+		state, err := toScanState(row)
+		if err != nil {
+			return nil, err
+		}
+		scans = append(scans, state)
+	}
+	return scans, nil
+}
+
+// toScanState は scans 行を ScanState に変換する（GetScan / ListScansBySite 共通）。
+// summary_json を持つ（done）行はスコアを算出して Summary に載せ、未完了は nil にする。
+func toScanState(row db.Scan) (ScanState, error) {
 	state := ScanState{
 		ID:            uuid.UUID(row.ID.Bytes).String(),
 		SiteID:        uuid.UUID(row.SiteID.Bytes).String(),
