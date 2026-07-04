@@ -18,7 +18,8 @@
 - **スコア計算: 完了**（#12）— `api/internal/report/score.go`（`Compute`/`Score`/`Band`/`Delta`・§5.1 の式・[0,100] クランプ・色は Band で frontend にマップ・unit 100%）
 - **ダッシュボード集計 backend: 完了**（#13）— `api/internal/report/`（`dashboard.go` 純粋集計 / `repository.go` / `service.go`）+ `handler/dashboard.go`（`GET /sites/:id/dashboard`：最新スコア＋前回差分＋スコア時系列）+ sqlc `ListDoneScanSummaries`。**残: frontend（Chart.js 描画・別セッション）**
 - **スキャン結果 API（状態/明細分離）: 完了**（作業ブランチ）— `handler/scan_result.go`（`report.Service` 依存）: `GET /scans/:id`（状態＝status＋summary＋score・診断中は 200＋status で進捗提示・summary は done で非 nil）/ `GET /scans/:id/findings`（明細＝重大度順）。404 は scan 不在時のみ。sqlc `ListFindingsByScan`・`ScanExists`。**残: frontend（結果レポート画面・別セッション）**
-- **次タスク候補**: W3 ハードニング（クロスホスト redirect 認証ヘッダ漏えい・下記 backlog）/ web (Nuxt) スキャフォールド（別セッション）
+- **W3 ハードニング: 対応済み**（作業ブランチ）— 認証注入時のみ `DisableRedirects` でクロスホスト redirect の認証ヘッダ漏えいを遮断（統合テストで実 SDK 実証）
+- **次タスク候補**: web (Nuxt) スキャフォールド（別セッション）/ findings ステータス更新（false_positive 化）等
 - sqlc: **v1.31.1** / river: **v0.39.0** / **Nuclei SDK: v3.9.0（go.mod 固定）**
 - モジュール構成: api / worker / jobs / **secrets（認証情報暗号化・依存ゼロ・ADR-0003）** の4モジュール（go.work + replace）
 - リモート: `ymd38/goodast`（**private**）
@@ -196,7 +197,7 @@
 |---|---|---|
 | W1 | loadHeaders の一過性 DB エラーも即 failed（再試行抑止・Bug） | ✅ `permanentCredentialError`（復号/検証失敗）で分類。恒久→failed / 一過性→river 再試行（最終試行のみ failed）。結合テストで decrypt 失敗→failed を検証 |
 | W2 | credential 失敗が掃除前で stale findings 残留（PR Agent） | ✅ `DeleteFindingsByScan` を loadHeaders より前へ移動。decrypt 失敗でも古い findings が残らない（テストで検証） |
-| W3 | WithHeaders 全リクエスト注入 → クロスホスト redirect で認証ヘッダ漏えい（Security） | ⏭️ **要ハードニング backlog**（下記）。SDK に redirect 制御 option 関数が無く小修正不可。コメント強化＋緩和策（単一ターゲット・非クロール・intrusive 除外）を明記 |
+| W3 | WithHeaders 全リクエスト注入 → クロスホスト redirect で認証ヘッダ漏えい（Security） | ✅ 対応済み（作業ブランチ）。**認証ヘッダ注入時に限り `DisableRedirects`**（`WithOptions(types.DefaultOptions()+DisableRedirects)` を先頭適用）で redirect 追従を停止。SDK の httpclientpool がテンプレの `redirects:true` すら上書きし全 redirect を DontFollowRedirect に強制することを確認。統合テスト（2 httptest サーバ＋redirect 追従テンプレ）で「fix 無し=漏れる / fix あり=漏れない」を実 SDK 実証。未認証は挙動不変（§10 parity 無影響） |
 
 ## 直近のアクション（resume ポイント）
 
@@ -204,12 +205,11 @@
   1. **§10-3 認証後スキャン**: `make juiceshop-up` → `make nuclei-auth`（`NUCLEI_TEST_TARGET`/`NUCLEI_TEST_TAGS` 上書き可）でローカル PASS 確認。nuclei-templates 導入環境が必要
   2. **API→worker 一気通貫（実 SDK スキャン）**: 自動テストは区間分割（engine 実体 / river・DB・注入到達を fakeEngine / API enqueue）。全経路は api+worker 起動＋curl で手動確認（web UI 実装後に画面から検証予定）
 - **次タスク候補（backend セッション）**:
-  1. **W3 ハードニング**: クロスホスト redirect の認証ヘッダ漏えい（下記 backlog / ADR-0002 持ち越し）。custom transport + redirect ポリシー
-  2. **findings 詳細レポート API**: `GET /scans/:id/findings` 等（レポート画面の入力）
-  3. **web (Nuxt) スキャフォールド**（別セッション）→ ダッシュボード描画（Chart.js・`GET /sites/:id/dashboard` を消費）
+  1. **web (Nuxt) スキャフォールド**（別セッション）→ ダッシュボード描画（Chart.js・`GET /sites/:id/dashboard` を消費）＋結果レポート画面（`GET /scans/:id` / `:id/findings` を消費）
+  2. **findings ステータス更新**（false_positive / fixed マーク）等の残 API
 
 ### ADR-0002 の持ち越し / 留意点
-- **【要ハードニング / 認証スキャンで顕在化】クロスホスト redirect での認証ヘッダ漏えい（PR #10 W3）**: `WithHeaders` は SDK 全リクエストにヘッダを付与するが、SDK はリクエスト時の host/path allowlist 強制手段（redirect 制御 option 関数）を持たない。テンプレートが redirects を有効化しクロスホスト redirect が起きると Cookie/Bearer が意図しないホストへ送られ得る。**恒久対策 = クロール/認証スキャン用の custom transport + redirect ポリシー**（既存の「リクエスト時 host 遮断」持ち越しと同一。認証注入導入で優先度上昇）。現状の緩和: 単一ターゲット・非クロール（katana 無効）・破壊的/intrusive タグ除外で逸脱経路を限定。
+- **【対応済み】クロスホスト redirect での認証ヘッダ漏えい（PR #10 W3）**: 認証ヘッダ注入時に限り `DisableRedirects=true`（`WithOptions(types.DefaultOptions()+DisableRedirects)` を先頭適用）で redirect 追従を停止し、Cookie/Bearer/任意の認証ヘッダが別ホストへ送出される経路を塞いだ。SDK の httpclientpool がテンプレの `redirects:true` を上書きし全 redirect を DontFollowRedirect に強制することを確認済み。統合テストで実 SDK 実証。**留意**: これは redirect 全停止の保守的対策。将来クロール/認証スキャンで「同一ホスト redirect は追従」等の細かな制御が要る場合は custom transport + redirect ポリシーを検討（現 PoC 範囲では DisableRedirects で十分）。なお **リクエスト時の host/path 厳密遮断（スコープ強制）** は別課題として引き続き post-filter（`scope.Allows`）で担保（クロール導入時に custom transport で強化）。
 - **nuclei-templates の取得は未実装**（SDK は既定 catalog 依存）。`make setup` / worker 起動時に固定バージョンを取得する配線は別途（企画書 §12「テンプレート配布」）。`engine/nuclei` の integration テストはテンプレート導入済みを前提にスキップ可能化済み
 - **【決定 2026-07-02】nuclei バイナリ/CLI はどのコンテナにも同梱しない**: nuclei は SDK として worker の Go バイナリに静的リンク済みで、実行時に別途 nuclei バイナリは不要。CLI は parity 検証（`make nuclei-parity`）のベースライン比較でのみ `go run @go.mod版`（SDK とバージョン一致）として使い、goodast ランタイムには不要。api への同梱案は ADR-0002 と衝突するため不採用。
   - ただし **nuclei-templates（データ）** は別件。SDK が scan 時に参照するため、固定版取得・worker への同梱は未実装のまま（§12「テンプレート配布」）。api/worker Dockerfile も未作成（docker-compose は `build:` 参照のみ）
