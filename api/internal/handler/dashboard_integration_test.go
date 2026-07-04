@@ -127,4 +127,39 @@ func TestDashboardHandlerFlow(t *testing.T) {
 			t.Errorf("latest.delta = %v, want -30", latest["delta"])
 		}
 	})
+
+	t.Run("ordered by finished_at, not created_at (backfill safe)", func(t *testing.T) {
+		siteID := insertScanTestSite(t, pool, "https://ordering.example.com", true)
+		base := time.Date(2026, 8, 1, 9, 0, 0, 0, time.UTC)
+		// A: created_at は後だが finished_at は先（=先に完了）。High 1件 → 90。
+		if _, err := pool.Exec(ctx,
+			`INSERT INTO scans (site_id, status, summary_json, created_at, finished_at)
+			 VALUES ($1, 'done', $2::jsonb, $3, $4)`,
+			siteID, `{"critical":0,"high":1,"medium":0,"low":0,"info":0,"total":1}`,
+			base.Add(10*time.Hour), base.Add(1*time.Hour)); err != nil {
+			t.Fatalf("insert scan A: %v", err)
+		}
+		// B: created_at は先だが finished_at は後（=後に完了）。Critical 1件 → 60。
+		if _, err := pool.Exec(ctx,
+			`INSERT INTO scans (site_id, status, summary_json, created_at, finished_at)
+			 VALUES ($1, 'done', $2::jsonb, $3, $4)`,
+			siteID, `{"critical":1,"high":0,"medium":0,"low":0,"info":0,"total":1}`,
+			base.Add(1*time.Hour), base.Add(10*time.Hour)); err != nil {
+			t.Fatalf("insert scan B: %v", err)
+		}
+
+		_, body := doJSON(t, r, http.MethodGet, "/sites/"+siteID.String()+"/dashboard", "")
+		hist, _ := body["history"].([]any)
+		if len(hist) != 2 {
+			t.Fatalf("len(history) = %d, want 2", len(hist))
+		}
+		// finished_at 昇順なら A(90) → B(60)。created_at 昇順だと B(60) → A(90) になり不一致。
+		if got := hist[0].(map[string]any)["score"].(float64); got != 90 {
+			t.Errorf("history[0].score = %v, want 90 (finished_at 先の A)", got)
+		}
+		latest, _ := body["latest"].(map[string]any)
+		if latest["score"].(float64) != 60 {
+			t.Errorf("latest.score = %v, want 60 (finished_at 後の B)", latest["score"])
+		}
+	})
 }

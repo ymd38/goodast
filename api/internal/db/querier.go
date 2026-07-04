@@ -21,6 +21,8 @@ type Querier interface {
 	GetSiteByName(ctx context.Context, name string) (Site, error)
 	// ダッシュボードのスコア時系列用。完了かつ summary_json を持つスキャンのみを
 	// 日付昇順（折れ線 左→右）で返す。スコアは呼び出し側（report）で summary から算出する。
+	// 並び順は report が点の日時に採用する finished_at（無ければ created_at）と一致させ、
+	// バックフィルや順不同挿入でも history の順序と表示日時が食い違わないようにする。
 	ListDoneScanSummaries(ctx context.Context, siteID pgtype.UUID) ([]ListDoneScanSummariesRow, error)
 	ListScansBySite(ctx context.Context, siteID pgtype.UUID) ([]Scan, error)
 	ListSites(ctx context.Context) ([]Site, error)
