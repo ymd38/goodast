@@ -33,6 +33,7 @@ const { data: sites, error } = await useAsyncData(
           <p
             class="mt-3 text-caption uppercase tracking-caption"
             :class="site.ownership_verified ? 'text-success' : 'text-warning'"
+            data-testid="ownership-badge"
           >
             {{ site.ownership_verified ? '所有確認済み' : '所有未確認' }}
           </p>

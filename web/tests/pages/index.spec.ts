@@ -37,6 +37,11 @@ describe('pages/index', () => {
     expect(
       wrapper.find('a[href="/sites/11111111-1111-1111-1111-111111111111"]').exists(),
     ).toBe(true)
+    // 所有確認バッジの色クラスを assert する
+    const badges = wrapper.findAll('[data-testid="ownership-badge"]')
+    expect(badges).toHaveLength(2)
+    expect(badges[0]!.classes()).toContain('text-success')
+    expect(badges[1]!.classes()).toContain('text-warning')
   })
 
   it('0 件なら未登録の空状態を表示する', async () => {
