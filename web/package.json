@@ -11,7 +11,7 @@
     "lint": "eslint .",
     "type-check": "nuxt typecheck",
     "test": "vitest",
-    "gen:api": "swagger2openapi --patch --yaml --outfile .openapi/openapi3.yaml ../api/internal/docs/swagger.yaml && openapi-typescript .openapi/openapi3.yaml -o types/api.d.ts"
+    "gen:api": "mkdir -p .openapi && swagger2openapi --patch --yaml --outfile .openapi/openapi3.yaml ../api/internal/docs/swagger.yaml && openapi-typescript .openapi/openapi3.yaml -o types/api.d.ts"
   },
   "dependencies": {
     "@fontsource/inter": "^5.2.0",

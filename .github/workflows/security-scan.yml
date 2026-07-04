@@ -75,25 +75,24 @@ jobs:
             --config p/typescript \
             .
 
-  # web/ がスキャフォールドされたら（package.json + pnpm-lock.yaml 追加後）に有効化する。
-  # pnpm-audit:
-  #   name: Frontend Dependency Audit (pnpm)
-  #   runs-on: ubuntu-latest
-  #   defaults:
-  #     run:
-  #       working-directory: web
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #     - uses: pnpm/action-setup@v4
-  #       with:
-  #         version: 10
-  #     - uses: actions/setup-node@v4
-  #       with:
-  #         node-version: '22'
-  #         cache: pnpm
-  #         cache-dependency-path: web/pnpm-lock.yaml
-  #     - name: Install dependencies
-  #       run: pnpm install --frozen-lockfile
-  #     - name: Frontend dependency audit
-  #       # --prod: devDependencies は本番に含まれないため対象外
-  #       run: pnpm audit --prod --audit-level=high
+  pnpm-audit:
+    name: Frontend Dependency Audit (pnpm)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Frontend dependency audit
+        # --prod: devDependencies は本番に含まれないため対象外
+        run: pnpm audit --prod --audit-level=high

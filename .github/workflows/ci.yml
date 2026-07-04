@@ -60,36 +60,35 @@ jobs:
           go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2
           golangci-lint run --timeout=5m
 
-  # web/ がスキャフォールドされたら（package.json + pnpm-lock.yaml 追加後）に有効化する。
-  # frontend:
-  #   name: Frontend (Nuxt)
-  #   runs-on: ubuntu-latest
-  #   if: github.event_name != 'issue_comment'
-  #   defaults:
-  #     run:
-  #       working-directory: web
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #     - uses: pnpm/action-setup@v4
-  #       with:
-  #         version: 10
-  #     - uses: actions/setup-node@v4
-  #       with:
-  #         node-version: '22'
-  #         cache: pnpm
-  #         cache-dependency-path: web/pnpm-lock.yaml
-  #     - name: Install dependencies
-  #       run: pnpm install --frozen-lockfile
-  #     - name: Dependency audit
-  #       run: pnpm audit --audit-level=high
-  #     - name: Prepare Nuxt
-  #       run: pnpm exec nuxt prepare
-  #     - name: Lint
-  #       run: pnpm lint
-  #     - name: Type check
-  #       run: pnpm type-check
-  #     - name: Test
-  #       run: pnpm test --run
+  frontend:
+    name: Frontend (Nuxt)
+    runs-on: ubuntu-latest
+    if: github.event_name != 'issue_comment'
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Dependency audit
+        run: pnpm audit --audit-level=high
+      - name: Prepare Nuxt
+        run: pnpm exec nuxt prepare
+      - name: Lint
+        run: pnpm lint
+      - name: Type check
+        run: pnpm type-check
+      - name: Test
+        run: pnpm test --run --coverage
 
   pr-agent:
     name: PR Agent
