@@ -22,6 +22,7 @@
 - **診断履歴 API: 完了**（作業ブランチ）— `GET /sites/:id/scans`（全 status を新しい順・各エントリは `GET /scans/:id` と同形）。既存 `ListScansBySite` 再利用＋`toScanState` 抽出（DRY）。DashboardHandler 相乗り。未知サイト=200＋空。**残: frontend（診断履歴画面・別セッション）**
 - **backend の PoC 主要 API は出揃った**。次: **web (Nuxt) スキャフォールド → UI 描画**（別セッション推奨）。残 backend 小粒は findings ステータス更新（false_positive 化・PoC 表示系には不要・見送り中）
 - **web (Nuxt) スキャフォールド: 完了**（PR A）— Nuxt 3 + Tailwind v4（tokens.css @theme 化）+ Vitest（カバレッジ100%ゲート）+ ESLint + openapi-typescript 型付きクライアント（swagger 2.0→OpenAPI 3 変換経由・生成物コミット）+ CI frontend/pnpm-audit 有効化。**残: ダッシュボード画面（PR B・同設計スペック）**
+- **ダッシュボード frontend: 完了**（PR B）— サイト一覧（`GET /sites`）→ サイト別ダッシュボード（`/sites/[id]`・§6-6 の3層: ScoreCard＋SeverityCountCards / ScoreTrendChart / SeverityStackChart）。chart config は純粋関数（unit 100%）・canvas は薄ラッパ＋モック・色は tokens.css の CSS 変数を実行時解決で注入。history<2 は「データ不足」。**残: サイト登録・スキャン実行・結果レポート・履歴の各画面**。**PR B は PR #19 マージ後に rebase して作成予定**
 - sqlc: **v1.31.1** / river: **v0.39.0** / **Nuclei SDK: v3.9.0（go.mod 固定）**
 - モジュール構成: api / worker / jobs / **secrets（認証情報暗号化・依存ゼロ・ADR-0003）** の4モジュール（go.work + replace）
 - リモート: `ymd38/goodast`（**private**）
@@ -79,13 +80,12 @@
   - `SeverityCounts` の json タグは worker の `summary_json`（engine.Summary）と一致 → ダッシュボードが DB 値をそのままデコード可能
   - テーブル駆動テストで境界値・クランプ（負数カウント含む）・全バンド・Delta・NewScore 範囲外を網羅。**unit 100%**・lint 0 issues
 - [x] web (Nuxt) スキャフォールド → CI の frontend / pnpm-audit ジョブ有効化
-- [~] ダッシュボード（スコア + 時系列・Chart.js）
+- [x] ダッシュボード（スコア + 時系列・Chart.js）
   - **backend 集計 API 完了**（`api/internal/report/` + `handler/dashboard.go`）: `GET /sites/:id/dashboard`
     - sqlc `ListDoneScanSummaries`（done かつ summary_json あり を日付昇順）を追加
     - `dashboard.go`（純粋集計 `BuildDashboard`・unit 100%）: 最新スコア＋前回差分（初回は null）＋スコア時系列（history 昇順）。`Score`/`Band` を消費
     - `repository.go`（summary_json→SeverityCounts デコード境界・Date は finished_at 優先）/ `service.go`（gin 非依存）/ `handler/dashboard.go`（uuid 400 / スキャン無し=200＋latest:null・history:[]）
     - 結合テスト（throwaway PG）で 400・空・集計＋除外（queued / summary_json NULL）を検証。実 DB 実走 PASS
-  - **残（frontend・別セッション）**: Chart.js の折れ線（スコア時系列）＋積み上げ棒（重大度別）・上段サマリカード描画
 - [~] スキャン結果 API（§6.3 進捗 / §6.4 結果レポートの backend）
   - **backend 完了**（`api/internal/report/scan_result.go` + `handler/scan_result.go`）: 状態と明細を分離
     - `GET /scans/:id`（状態）: status＋summary（counts＋score/band/label）。診断はバックグラウンド実行のため**scan が存在する限り 200＋status で進捗提示**（queued/running）、summary は done で非 nil。進捗ポーリング兼用
