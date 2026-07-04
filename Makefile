@@ -119,3 +119,8 @@ nuclei-scan: ## 対象へ実スキャン結合テスト（NUCLEI_TEST_TARGET / N
 nuclei-parity: ## 検知精度 検証: Nuclei CLI ベースライン vs goodast の欠落ゼロ突合（要 make juiceshop-up）
 	cd worker && NUCLEI_TEST_TARGET="$(NUCLEI_TEST_TARGET)" NUCLEI_TEST_TAGS="$(NUCLEI_TEST_TAGS)" \
 		go test -tags=integration -v -timeout 25m -run TestNucleiCLIParity ./internal/engine/nuclei/
+
+.PHONY: nuclei-auth
+nuclei-auth: ## 認証後スキャン検証（§10-3）: ヘッダ注入の到達（決定的）+ 認証カバレッジ縮小なし（要 make juiceshop-up）
+	cd worker && NUCLEI_TEST_TARGET="$(NUCLEI_TEST_TARGET)" NUCLEI_TEST_TAGS="$(NUCLEI_TEST_TAGS)" \
+		go test -tags=integration -v -timeout 30m -run 'TestNucleiHeaderInjection|TestNucleiAuthenticatedCoverage' ./internal/engine/nuclei/
