@@ -1,0 +1,19 @@
+@import 'tailwindcss';
+@import '@fontsource/inter/300.css';
+@import '@fontsource/inter/700.css';
+@import './tokens.css';
+
+@layer base {
+  body {
+    background-color: var(--color-canvas);
+    color: var(--color-body);
+    font-family: var(--font-body);
+    font-weight: 300;
+  }
+}
+
+/* M ストライプ（ブランド区切り線専用。CTA・背景塗り使用禁止） */
+@utility m-stripe {
+  height: 4px;
+  background-image: var(--gradient-m-stripe);
+}

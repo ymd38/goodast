@@ -4,7 +4,7 @@
 > **新しいセッションはまずこのファイルを読み、現在地・次アクションを把握する。**
 > **各作業の区切りでこのファイルを更新する。** 決定の経緯は `MEMORY.md`、要件/フェーズは `docs/poc-plan.md` を正とする。
 
-最終更新: 2026-07-04
+最終更新: 2026-07-05
 
 ---
 
@@ -21,6 +21,7 @@
 - **W3 ハードニング: 対応済み**（#16）— 認証注入時のみ `DisableRedirects` でクロスホスト redirect の認証ヘッダ漏えいを遮断（統合テストで実 SDK 実証）
 - **診断履歴 API: 完了**（作業ブランチ）— `GET /sites/:id/scans`（全 status を新しい順・各エントリは `GET /scans/:id` と同形）。既存 `ListScansBySite` 再利用＋`toScanState` 抽出（DRY）。DashboardHandler 相乗り。未知サイト=200＋空。**残: frontend（診断履歴画面・別セッション）**
 - **backend の PoC 主要 API は出揃った**。次: **web (Nuxt) スキャフォールド → UI 描画**（別セッション推奨）。残 backend 小粒は findings ステータス更新（false_positive 化・PoC 表示系には不要・見送り中）
+- **web (Nuxt) スキャフォールド: 完了**（PR A）— Nuxt 3 + Tailwind v4（tokens.css @theme 化）+ Vitest（カバレッジ100%ゲート）+ ESLint + openapi-typescript 型付きクライアント（swagger 2.0→OpenAPI 3 変換経由・生成物コミット）+ CI frontend/pnpm-audit 有効化。**残: ダッシュボード画面（PR B・同設計スペック）**
 - sqlc: **v1.31.1** / river: **v0.39.0** / **Nuclei SDK: v3.9.0（go.mod 固定）**
 - モジュール構成: api / worker / jobs / **secrets（認証情報暗号化・依存ゼロ・ADR-0003）** の4モジュール（go.work + replace）
 - リモート: `ymd38/goodast`（**private**）
@@ -77,7 +78,7 @@
   - 色は backend で持たず **Band（セマンティック）を返し frontend が tokens.css の CSS 変数へマップ**（責務分離）
   - `SeverityCounts` の json タグは worker の `summary_json`（engine.Summary）と一致 → ダッシュボードが DB 値をそのままデコード可能
   - テーブル駆動テストで境界値・クランプ（負数カウント含む）・全バンド・Delta・NewScore 範囲外を網羅。**unit 100%**・lint 0 issues
-- [ ] web (Nuxt) スキャフォールド → CI の frontend / pnpm-audit ジョブ有効化
+- [x] web (Nuxt) スキャフォールド → CI の frontend / pnpm-audit ジョブ有効化
 - [~] ダッシュボード（スコア + 時系列・Chart.js）
   - **backend 集計 API 完了**（`api/internal/report/` + `handler/dashboard.go`）: `GET /sites/:id/dashboard`
     - sqlc `ListDoneScanSummaries`（done かつ summary_json あり を日付昇順）を追加
