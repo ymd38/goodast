@@ -218,7 +218,11 @@
 
 ## メモ（運用）
 
-- マイグレーション適用: `migrate -path migrations -database "$DATABASE_URL" up`
+- マイグレーション適用: `migrate -path migrations -database "$DATABASE_URL" up`（ホスト実行・DB は 127.0.0.1:5432 の loopback 公開）。
+  接続先は `localhost` でなく **127.0.0.1**（IPv6 ::1 解決とのミスマッチ回避）。DB が「Up なのに接続拒否」の場合は
+  Docker Desktop のポート転送が外れている（`docker compose ps` の PORTS に `->` が無い）→ `docker compose up -d --force-recreate db`
+- compose の api / worker / web は **Dockerfile 未作成のため `profiles: [app]` で隔離**。素の `docker compose up` は db のみ起動。
+  コンテナ化（Dockerfile 3本）は別タスク。揃ったら `docker compose --profile app up` で有効化
 - sqlc 再生成: 各モジュールで `sqlc generate`（v1.31.1）。マイグレーション変更後は必須
 - river マイグレーションは CLI で生成: `go run github.com/riverqueue/river/cmd/river@v0.39.0 migrate-get --version N --up`
   - `ALTER TYPE ... ADD VALUE` の制約により、enum 値追加(v4)と使用(v6)は別ファイル(別tx)に分割済み

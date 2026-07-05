@@ -3,7 +3,8 @@
 # DB はローカル開発用 docker-compose（service: db / postgres:16-alpine）を使う。
 # 接続情報は変数で上書き可能。本番値は必ず環境変数で上書きすること。
 
-DATABASE_URL      ?= postgres://goodast:goodast@localhost:5432/goodast?sslmode=disable
+# localhost だと IPv6(::1) に解決され得るが、compose の公開は 127.0.0.1 限定のため IPv4 を明示する
+DATABASE_URL      ?= postgres://goodast:goodast@127.0.0.1:5432/goodast?sslmode=disable
 TEST_DATABASE_URL ?= $(DATABASE_URL)
 MIGRATE           ?= migrate
 NUCLEI_VERSION    ?= v3.9.0
