@@ -12,6 +12,10 @@ services:
     volumes:
       - db_data:/var/lib/postgresql/data
 
+  # api / worker / web は Dockerfile 未作成（コンテナ化は別タスク）。
+  # profiles で隔離し、素の `docker compose up` では db のみ起動する。
+  # ローカル開発は make dev-api / dev-worker / dev-web（ホスト実行）を使う。
+  # Dockerfile が揃ったら `docker compose --profile app up` で有効化する。
   api:
     build: ./api
     depends_on: [db]
@@ -19,18 +23,21 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-goodast}:${POSTGRES_PASSWORD:-goodast}@db:5432/${POSTGRES_DB:-goodast}
     ports:
       - "127.0.0.1:8080:8080"
+    profiles: [app]
 
   worker:
     build: ./worker
     depends_on: [db]
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-goodast}:${POSTGRES_PASSWORD:-goodast}@db:5432/${POSTGRES_DB:-goodast}
+    profiles: [app]
 
   web:
     build: ./web
     depends_on: [api]
     ports:
       - "127.0.0.1:3000:3000"
+    profiles: [app]
 
   # 検証用: make juiceshop-up で起動。意図的に脆弱なため loopback に限定し外部へ露出させない。
   juiceshop:
