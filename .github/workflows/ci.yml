@@ -79,8 +79,8 @@ jobs:
           cache-dependency-path: web/pnpm-lock.yaml
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-      - name: Dependency audit
-        run: pnpm audit --audit-level=high
+      # 依存監査は security-scan.yml の pnpm-audit ジョブ（--prod）に一本化。
+      # dev 依存の advisory で機能 CI が止まるのを防ぐ（本番非搬入のため）。
       - name: Prepare Nuxt
         run: pnpm exec nuxt prepare
       - name: Lint
