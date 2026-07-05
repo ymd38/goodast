@@ -43,9 +43,12 @@ type Config struct {
 // 選択の段階で副作用リスクを下げる。これは SDK が確実に強制できる唯一のレバー。
 func DefaultConfig() Config {
 	return Config{
-		RateLimit:   10,
-		RatePeriod:  time.Second,
-		Severities:  "",
+		RateLimit:  10,
+		RatePeriod: time.Second,
+		Severities: "",
+		// 暫定: タグ無しは全 13k テンプレを回しジョブがタイムアウトするため、
+		// parity 検証済みの軽量プリセットに絞る（正式なプリセット選択は別タスク）。
+		Tags:        []string{"misconfig", "tech"},
 		ExcludeTags: []string{"dos", "intrusive"},
 	}
 }

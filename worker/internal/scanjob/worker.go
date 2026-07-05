@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -44,6 +45,13 @@ type WorkerDeps struct {
 // NewWorker は scan ジョブワーカーを生成する。
 func NewWorker(d WorkerDeps) *Worker {
 	return &Worker{queries: d.Queries, engine: d.Engine, cipher: d.Cipher, logger: d.Logger}
+}
+
+// Timeout は scan ジョブ1回あたりの実行上限。river 既定の1分では nuclei スキャンが
+// 完走できず context deadline exceeded を繰り返すため、暫定で余裕を持たせる
+// （正式なタイムアウト設計・プリセット別の値設定は別タスク）。
+func (w *Worker) Timeout(*river.Job[jobs.ScanArgs]) time.Duration {
+	return 10 * time.Minute
 }
 
 // scanSummary は scans.summary_json に書き込むダッシュボード描画用の集計データ。

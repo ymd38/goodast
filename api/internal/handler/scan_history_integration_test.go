@@ -66,7 +66,7 @@ func TestSiteScansHandlerFlow(t *testing.T) {
 		base := time.Date(2026, 9, 1, 9, 0, 0, 0, time.UTC)
 		// 古い順に挿入。期待は新しい順（failed → queued → done）。
 		insertScanFull(t, pool, siteID, "done",
-			`{"critical":1,"high":0,"medium":0,"low":0,"info":0,"total":1}`, base)
+			`{"findings":{"critical":1,"high":0,"medium":0,"low":0,"info":0,"total":1}}`, base)
 		insertScanFull(t, pool, siteID, "queued", "", base.Add(1*time.Hour))
 		insertScanFull(t, pool, siteID, "failed", "", base.Add(2*time.Hour))
 

@@ -101,7 +101,7 @@ func TestScanResultHandlerFlow(t *testing.T) {
 
 	t.Run("state done: 200 with summary and score", func(t *testing.T) {
 		scanID := insertDoneScan(t, pool, siteID,
-			`{"critical":1,"high":0,"medium":0,"low":0,"info":0,"total":1}`, time.Now())
+			`{"findings":{"critical":1,"high":0,"medium":0,"low":0,"info":0,"total":1}}`, time.Now())
 		code, body := doJSON(t, r, http.MethodGet, "/scans/"+scanID, "")
 		if code != http.StatusOK {
 			t.Fatalf("code = %d, want 200", code)
@@ -135,7 +135,7 @@ func TestScanResultHandlerFlow(t *testing.T) {
 
 	t.Run("findings clean scan: 200 with empty array", func(t *testing.T) {
 		scanID := insertDoneScan(t, pool, siteID,
-			`{"critical":0,"high":0,"medium":0,"low":0,"info":0,"total":0}`, time.Now())
+			`{"findings":{"critical":0,"high":0,"medium":0,"low":0,"info":0,"total":0}}`, time.Now())
 		code, body := doJSON(t, r, http.MethodGet, "/scans/"+scanID+"/findings", "")
 		if code != http.StatusOK {
 			t.Fatalf("code = %d, want 200", code)
@@ -148,7 +148,7 @@ func TestScanResultHandlerFlow(t *testing.T) {
 
 	t.Run("findings ordered by severity (Critical first)", func(t *testing.T) {
 		scanID := insertDoneScan(t, pool, siteID,
-			`{"critical":1,"high":1,"low":1,"medium":0,"info":0,"total":3}`, time.Now())
+			`{"findings":{"critical":1,"high":1,"low":1,"medium":0,"info":0,"total":3}}`, time.Now())
 		// 重い順とは逆順に挿入して、SQL の severity 順が効くことを確認する。
 		insertFinding(t, pool, scanID, "Low", "https://result.example.com/a")
 		insertFinding(t, pool, scanID, "Critical", "https://result.example.com/b")
