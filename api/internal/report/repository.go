@@ -32,8 +32,8 @@ func (r *Repository) DoneScanPoints(ctx context.Context, siteID uuid.UUID) ([]Sc
 	}
 	points := make([]ScanPoint, 0, len(rows))
 	for _, row := range rows {
-		var counts SeverityCounts
-		if err := json.Unmarshal(row.SummaryJson, &counts); err != nil {
+		counts, err := decodeSummaryCounts(row.SummaryJson)
+		if err != nil {
 			return nil, fmt.Errorf("decode summary_json (scan %s): %w", uuid.UUID(row.ID.Bytes), err)
 		}
 		points = append(points, ScanPoint{
@@ -43,6 +43,19 @@ func (r *Repository) DoneScanPoints(ctx context.Context, siteID uuid.UUID) ([]Sc
 		})
 	}
 	return points, nil
+}
+
+// decodeSummaryCounts は summary_json から重大度カウントを取り出す。
+// worker は scanjob.scanSummary（{"findings": {...counts...}}）として書き込むため、
+// カウントは "findings" キーの下にネストしている。ここがその構造と一致させる唯一の境界。
+func decodeSummaryCounts(raw []byte) (SeverityCounts, error) {
+	var wrapper struct {
+		Findings SeverityCounts `json:"findings"`
+	}
+	if err := json.Unmarshal(raw, &wrapper); err != nil {
+		return SeverityCounts{}, err
+	}
+	return wrapper.Findings, nil
 }
 
 // scanDate は時系列上の点の日時を返す。完了時刻（finished_at）を優先し、
@@ -96,8 +109,8 @@ func toScanState(row db.Scan) (ScanState, error) {
 		FinishedAt:    timePtr(row.FinishedAt),
 	}
 	if len(row.SummaryJson) > 0 {
-		var counts SeverityCounts
-		if err := json.Unmarshal(row.SummaryJson, &counts); err != nil {
+		counts, err := decodeSummaryCounts(row.SummaryJson)
+		if err != nil {
 			return ScanState{}, fmt.Errorf("decode summary_json (scan %s): %w", state.ID, err)
 		}
 		summary := buildScanSummary(counts)

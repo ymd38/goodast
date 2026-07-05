@@ -86,8 +86,8 @@ func TestDashboardHandlerFlow(t *testing.T) {
 		siteID := insertScanTestSite(t, pool, "https://scored.example.com", true)
 		base := time.Date(2026, 7, 1, 9, 0, 0, 0, time.UTC)
 		// 古い順に挿入（High 1件=90）→（Critical 1件=60）。delta は 60-90 = -30。
-		insertDoneScan(t, pool, siteID, `{"critical":0,"high":1,"medium":0,"low":0,"info":0,"total":1}`, base)
-		insertDoneScan(t, pool, siteID, `{"critical":1,"high":0,"medium":0,"low":0,"info":0,"total":1}`, base.Add(24*time.Hour))
+		insertDoneScan(t, pool, siteID, `{"findings":{"critical":0,"high":1,"medium":0,"low":0,"info":0,"total":1}}`, base)
+		insertDoneScan(t, pool, siteID, `{"findings":{"critical":1,"high":0,"medium":0,"low":0,"info":0,"total":1}}`, base.Add(24*time.Hour))
 		// 除外されるべきスキャン: queued（未完了）と done だが summary_json NULL。
 		if _, err := pool.Exec(ctx, `INSERT INTO scans (site_id, status) VALUES ($1, 'queued')`, siteID); err != nil {
 			t.Fatalf("insert queued scan: %v", err)
@@ -135,7 +135,7 @@ func TestDashboardHandlerFlow(t *testing.T) {
 		if _, err := pool.Exec(ctx,
 			`INSERT INTO scans (site_id, status, summary_json, created_at, finished_at)
 			 VALUES ($1, 'done', $2::jsonb, $3, $4)`,
-			siteID, `{"critical":0,"high":1,"medium":0,"low":0,"info":0,"total":1}`,
+			siteID, `{"findings":{"critical":0,"high":1,"medium":0,"low":0,"info":0,"total":1}}`,
 			base.Add(10*time.Hour), base.Add(1*time.Hour)); err != nil {
 			t.Fatalf("insert scan A: %v", err)
 		}
@@ -143,7 +143,7 @@ func TestDashboardHandlerFlow(t *testing.T) {
 		if _, err := pool.Exec(ctx,
 			`INSERT INTO scans (site_id, status, summary_json, created_at, finished_at)
 			 VALUES ($1, 'done', $2::jsonb, $3, $4)`,
-			siteID, `{"critical":1,"high":0,"medium":0,"low":0,"info":0,"total":1}`,
+			siteID, `{"findings":{"critical":1,"high":0,"medium":0,"low":0,"info":0,"total":1}}`,
 			base.Add(1*time.Hour), base.Add(10*time.Hour)); err != nil {
 			t.Fatalf("insert scan B: %v", err)
 		}
