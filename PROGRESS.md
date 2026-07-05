@@ -101,6 +101,22 @@
 
 ---
 
+## 手動 E2E で判明した課題（2026-07-05・feat/0020-dashboard 上で対応）
+
+UI から Juice Shop を実スキャンして初めて出た問題。UI/配管は正常に動作した。
+
+| # | 問題 | 状態 |
+|---|---|---|
+| ② | `summary_json` デコード不一致で重大度カウントが常に 0 化（worker はネスト `{"findings":{...}}`、api はフラットで Unmarshal） | ✅ **本修正済み**（69774ce）。`decodeSummaryCounts` に集約 + 結合テストのフィクスチャをネスト形へ修正（回帰固定）+ 純粋関数ユニットテスト追加 |
+| ① | UI 起点スキャンが完走しない（`DefaultConfig` の Tags 空＝全 13k テンプレ × river 既定 1 分タイムアウトで context deadline exceeded を 25 回リトライ） | ⚠️ **暫定回避のみ**（7df0a53）。tags=misconfig,tech 決め打ち + timeout 10 分固定。**別セッション（backend）で正式対応が必要** |
+
+### ①の正式対応（backend 別セッションで実施）
+- **スキャンプリセット（軽量/標準/詳細）** を設計し、タグ選択をハードコードから外す（企画書 §6-2）。API/DB でプリセットを受け取り engine.Config に反映
+- **ジョブタイムアウトをプリセット別に適切設計**（river の `Timeout()` 固定 10 分は暫定）。レート・並列も含め config 化を検討
+- **根本のドリフト対策**: worker（`scanjob.scanSummary`）と api（`report.SeverityCounts`）が `summary_json` の形を**別モジュールで独立定義**しており再発リスクがある。共有型（`jobs/` 等）へ寄せるか、契約テストで固定するかを検討（②の直接原因）
+
+---
+
 ## コードレビュー backlog（PR #1）
 
 出典: `SuggentionsByCodeReview.md`（Qodo Code Review + PR Agent）
