@@ -9,7 +9,7 @@ import (
 
 func writeMarker(t *testing.T, dir, content string) {
 	t.Helper()
-	if err := os.WriteFile(filepath.Join(dir, MarkerFile), []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, markerFile), []byte(content), 0o644); err != nil {
 		t.Fatalf("write marker: %v", err)
 	}
 }

@@ -119,6 +119,9 @@ func TestLoad(t *testing.T) {
 			if cfg.NucleiTemplatesDir != tt.env["NUCLEI_TEMPLATES_DIR"] {
 				t.Errorf("NucleiTemplatesDir = %q, want %q", cfg.NucleiTemplatesDir, tt.env["NUCLEI_TEMPLATES_DIR"])
 			}
+			if cfg.NucleiTemplatesVersion != tt.env["NUCLEI_TEMPLATES_VERSION"] {
+				t.Errorf("NucleiTemplatesVersion = %q, want %q", cfg.NucleiTemplatesVersion, tt.env["NUCLEI_TEMPLATES_VERSION"])
+			}
 			if tt.check != nil {
 				tt.check(t, cfg)
 			}
