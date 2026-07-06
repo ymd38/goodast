@@ -13,6 +13,7 @@ func applyEnv(t *testing.T, env map[string]string) {
 	keys := []string{
 		"DATABASE_URL", "GOODAST_ENCRYPTION_KEY", "WORKER_HEALTH_ADDR", "LOG_LEVEL",
 		"SHUTDOWN_TIMEOUT", "DB_MAX_CONNS", "DB_MIN_CONNS",
+		"NUCLEI_TEMPLATES_DIR", "NUCLEI_TEMPLATES_VERSION",
 	}
 	for _, k := range keys {
 		t.Setenv(k, env[k])
@@ -23,11 +24,23 @@ func TestLoad(t *testing.T) {
 	const validURL = "postgres://u:p@localhost:5432/db"
 	const validKey = "test-encryption-key" // Load は非空のみ検証（形式検証は Cipher 構築側）。
 
-	// base は必須変数（DATABASE_URL / GOODAST_ENCRYPTION_KEY）を満たす env を返す。
+	// base は必須変数（DATABASE_URL / GOODAST_ENCRYPTION_KEY / NUCLEI_TEMPLATES_DIR / NUCLEI_TEMPLATES_VERSION）を満たす env を返す。
 	base := func(extra map[string]string) map[string]string {
-		env := map[string]string{"DATABASE_URL": validURL, "GOODAST_ENCRYPTION_KEY": validKey}
+		env := map[string]string{
+			"DATABASE_URL":             validURL,
+			"GOODAST_ENCRYPTION_KEY":   validKey,
+			"NUCLEI_TEMPLATES_DIR":     "/tmp/nuclei-templates",
+			"NUCLEI_TEMPLATES_VERSION": "v10.4.5",
+		}
 		maps.Copy(env, extra)
 		return env
+	}
+
+	// baseWithout は base から指定キーを 1 つ削除したマップを返す（欠落エラーケース用）。
+	baseWithout := func(drop string) map[string]string {
+		m := base(nil)
+		delete(m, drop)
+		return m
 	}
 
 	tests := []struct {
@@ -75,6 +88,8 @@ func TestLoad(t *testing.T) {
 		},
 		{name: "missing DATABASE_URL", env: map[string]string{"GOODAST_ENCRYPTION_KEY": validKey}, wantErr: true},
 		{name: "missing GOODAST_ENCRYPTION_KEY", env: map[string]string{"DATABASE_URL": validURL}, wantErr: true},
+		{name: "missing NUCLEI_TEMPLATES_DIR", env: baseWithout("NUCLEI_TEMPLATES_DIR"), wantErr: true},
+		{name: "missing NUCLEI_TEMPLATES_VERSION", env: baseWithout("NUCLEI_TEMPLATES_VERSION"), wantErr: true},
 		{name: "invalid LOG_LEVEL", env: base(map[string]string{"LOG_LEVEL": "trace"}), wantErr: true},
 		{name: "invalid SHUTDOWN_TIMEOUT", env: base(map[string]string{"SHUTDOWN_TIMEOUT": "soon"}), wantErr: true},
 		{name: "non-positive SHUTDOWN_TIMEOUT", env: base(map[string]string{"SHUTDOWN_TIMEOUT": "0s"}), wantErr: true},
@@ -100,6 +115,12 @@ func TestLoad(t *testing.T) {
 			}
 			if cfg.DatabaseURL != tt.env["DATABASE_URL"] {
 				t.Errorf("DatabaseURL = %q, want %q", cfg.DatabaseURL, tt.env["DATABASE_URL"])
+			}
+			if cfg.NucleiTemplatesDir != tt.env["NUCLEI_TEMPLATES_DIR"] {
+				t.Errorf("NucleiTemplatesDir = %q, want %q", cfg.NucleiTemplatesDir, tt.env["NUCLEI_TEMPLATES_DIR"])
+			}
+			if cfg.NucleiTemplatesVersion != tt.env["NUCLEI_TEMPLATES_VERSION"] {
+				t.Errorf("NucleiTemplatesVersion = %q, want %q", cfg.NucleiTemplatesVersion, tt.env["NUCLEI_TEMPLATES_VERSION"])
 			}
 			if tt.check != nil {
 				tt.check(t, cfg)
