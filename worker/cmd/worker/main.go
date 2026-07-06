@@ -50,8 +50,9 @@ func run() error {
 		func() *slog.Logger { return logger },
 		newPool,
 		func(pool *pgxpool.Pool) *db.Queries { return db.New(pool) },
-		// engine.Engine の唯一の実装は Nuclei（ADR-0002）。保守的デフォルト設定で配線する。
-		func() engine.Engine { return nuclei.New(nuclei.DefaultConfig()) },
+		// engine.Engine の唯一の実装は Nuclei（ADR-0002）。実行パラメータは per-scan の
+		// ScanRequest.Profile から渡すため、配線時に Config は不要。
+		func() engine.Engine { return nuclei.New() },
 		newCipher,
 		scanjob.NewWorker,
 		newRiverClient,

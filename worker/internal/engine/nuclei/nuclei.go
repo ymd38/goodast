@@ -12,7 +12,6 @@ import (
 	"context"
 	"fmt"
 	"sync"
-	"time"
 
 	nucleilib "github.com/projectdiscovery/nuclei/v3/lib"
 	"github.com/projectdiscovery/nuclei/v3/pkg/output"
@@ -21,51 +20,16 @@ import (
 	"github.com/ymd38/goodast/worker/internal/engine"
 )
 
-// Config は Nuclei エンジンの保守的な実行設定（ADR の保守的レート方針）。
-type Config struct {
-	// RateLimit は RatePeriod あたりの最大リクエスト数。
-	RateLimit int
-	// RatePeriod はレート制限の単位時間。
-	RatePeriod time.Duration
-	// Severities は実行対象 severity の CSV（空文字なら全 severity）。
-	Severities string
-	// Tags は実行対象を絞り込むタグ（空なら全テンプレート）。スキャンプリセット
-	// （軽量/標準/詳細）の実装やテストでの高速な部分実行に用いる。
-	Tags []string
-	// ExcludeTags は除外タグ。破壊的テンプレート（dos 等）をデフォルト無効化する。
-	ExcludeTags []string
-}
-
-// DefaultConfig は PoC の保守的デフォルト設定を返す。
-//
-// ExcludeTags は破壊的・状態変更を伴うテンプレートをデフォルト無効化する（ADR / Critical
-// Constraints）。`dos`（DoS 系）に加え `intrusive`（状態変更・攻撃的）を除外し、テンプレート
-// 選択の段階で副作用リスクを下げる。これは SDK が確実に強制できる唯一のレバー。
-func DefaultConfig() Config {
-	return Config{
-		RateLimit:  10,
-		RatePeriod: time.Second,
-		Severities: "",
-		// 暫定: タグ無しは全 13k テンプレを回しジョブがタイムアウトするため、
-		// parity 検証済みの軽量プリセットに絞る（正式なプリセット選択は別タスク）。
-		Tags:        []string{"misconfig", "tech"},
-		ExcludeTags: []string{"dos", "intrusive"},
-	}
-}
-
 // version は go.mod で固定している Nuclei SDK のバージョン（ADR-0002）。
 // go.mod の require を更新したらここも同期させる（scans.engine_version に記録される）。
 const version = "nuclei/v3.9.0"
 
-// Engine は engine.Engine の Nuclei 実装。
-type Engine struct {
-	cfg Config
-}
+// Engine は engine.Engine の Nuclei 実装。実行パラメータは per-scan で ScanRequest.Profile
+// から受け取るため、Engine 自体は状態を持たない（プリセット差はリクエスト側で表現する）。
+type Engine struct{}
 
 // New は Nuclei エンジンを生成する。
-func New(cfg Config) *Engine {
-	return &Engine{cfg: cfg}
-}
+func New() *Engine { return &Engine{} }
 
 // Version は固定された Nuclei SDK バージョン識別子を返す。
 func (e *Engine) Version() string { return version }
@@ -89,12 +53,12 @@ func (e *Engine) Version() string { return version }
 func (e *Engine) Scan(ctx context.Context, req engine.ScanRequest, onFinding engine.FindingCallback) error {
 	opts := []nucleilib.NucleiSDKOptions{
 		nucleilib.WithTemplateFilters(nucleilib.TemplateFilters{
-			Severity:    e.cfg.Severities,
-			Tags:        e.cfg.Tags,
-			ExcludeTags: e.cfg.ExcludeTags,
+			Severity:    req.Profile.Severities,
+			Tags:        req.Profile.Tags,
+			ExcludeTags: req.Profile.ExcludeTags,
 		}),
 		// 保守的な全体レート制限（DoS 化防止）。
-		nucleilib.WithGlobalRateLimit(e.cfg.RateLimit, e.cfg.RatePeriod),
+		nucleilib.WithGlobalRateLimit(req.Profile.RateLimit, req.Profile.RatePeriod),
 		// テンプレート由来のローカルファイル読取を禁止（過去の LFI/RCE テンプレートリスク対策）。
 		// ローカルネットワーク制限はしない（localhost 等の自前ターゲットを許可するため）。
 		nucleilib.WithSandboxOptions(false, false),
