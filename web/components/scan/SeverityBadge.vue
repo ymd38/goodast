@@ -1,6 +1,7 @@
 <script setup lang="ts">
-const props = defineProps<{ severity: string }>()
-const cls = computed(() => severityTextClass(props.severity))
+// 生成型 Finding.severity は optional のため受け口も optional（未設定は未知扱いで muted）
+const props = defineProps<{ severity?: string }>()
+const cls = computed(() => severityTextClass(props.severity ?? ''))
 </script>
 
 <template>

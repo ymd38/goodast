@@ -8,7 +8,7 @@ defineProps<{ finding: Finding }>()
   <article data-testid="finding" class="border border-hairline bg-surface-card p-6">
     <div class="flex items-center justify-between gap-4">
       <p class="font-display text-title-md font-bold text-on-dark">{{ finding.title }}</p>
-      <SeverityBadge :severity="finding.severity" />
+      <ScanSeverityBadge :severity="finding.severity" />
     </div>
     <p class="mt-2 break-all text-body-sm">{{ finding.url }}</p>
     <p v-if="finding.cwe" data-testid="finding-cwe" class="mt-2 text-caption uppercase tracking-caption text-muted">{{ finding.cwe }}</p>

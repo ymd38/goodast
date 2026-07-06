@@ -8,4 +8,10 @@ describe('SeverityBadge', () => {
     expect(w.text()).toContain('Critical')
     expect(w.find('[data-testid="severity-badge"]').classes()).toContain('text-m-red')
   })
+
+  it('severity 未設定（optional）は muted で空表示する', () => {
+    const w = mount(SeverityBadge)
+    expect(w.find('[data-testid="severity-badge"]').classes()).toContain('text-muted')
+    expect(w.text()).toBe('')
+  })
 })

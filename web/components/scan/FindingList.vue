@@ -7,7 +7,7 @@ const sorted = computed(() => sortFindingsBySeverity(props.findings))
 
 <template>
   <div v-if="sorted.length" class="space-y-4">
-    <FindingCard v-for="f in sorted" :key="f.id" :finding="f" />
+    <ScanFindingCard v-for="f in sorted" :key="f.id" :finding="f" />
   </div>
   <p v-else class="border border-hairline bg-surface-soft p-6 text-body-sm text-muted">
     検出はありませんでした。
