@@ -17,19 +17,19 @@ function onSubmit() {
       <label class="block text-label font-bold uppercase tracking-label text-muted" for="name">サイト名</label>
       <input
 id="name" v-model="name" data-testid="field-name" required
-        class="mt-2 w-full border border-hairline bg-surface-card p-3 text-body text-on-dark" >
+        class="mt-2 w-full border border-hairline bg-surface-card p-3 text-body-md text-on-dark" >
     </div>
     <div>
       <label class="block text-label font-bold uppercase tracking-label text-muted" for="base-url">ベース URL</label>
       <input
 id="base-url" v-model="baseUrl" data-testid="field-base-url" type="url" required
-        class="mt-2 w-full border border-hairline bg-surface-card p-3 text-body text-on-dark" >
+        class="mt-2 w-full border border-hairline bg-surface-card p-3 text-body-md text-on-dark" >
     </div>
     <div>
       <label class="block text-label font-bold uppercase tracking-label text-muted" for="method">所有確認方式</label>
       <select
 id="method" v-model="verifyMethod" data-testid="field-method"
-        class="mt-2 w-full border border-hairline bg-surface-card p-3 text-body text-on-dark">
+        class="mt-2 w-full border border-hairline bg-surface-card p-3 text-body-md text-on-dark">
         <option value="file">ファイル設置</option>
         <option value="dns">DNS TXT</option>
       </select>
