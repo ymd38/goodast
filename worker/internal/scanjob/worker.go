@@ -47,17 +47,11 @@ func NewWorker(d WorkerDeps) *Worker {
 	return &Worker{queries: d.Queries, engine: d.Engine, cipher: d.Cipher, logger: d.Logger}
 }
 
-// Timeout は scan ジョブ1回あたりの実行上限。river 既定の1分では nuclei スキャンが
-// 完走できず context deadline exceeded を繰り返すため、暫定で余裕を持たせる
-// （正式なタイムアウト設計・プリセット別の値設定は別タスク）。
-func (w *Worker) Timeout(*river.Job[jobs.ScanArgs]) time.Duration {
-	return 10 * time.Minute
-}
-
-// scanSummary は scans.summary_json に書き込むダッシュボード描画用の集計データ。
-// スコア計算は api 側 report に集約するため、ここでは件数のみ持つ。
-type scanSummary struct {
-	Findings engine.Summary `json:"findings"`
+// Timeout は scan ジョブ1回あたりの実行上限。preset ごとに engine.PlanFor が返す値を使う。
+// river の callback は context/DB を持てないため、preset はジョブ引数から得る。
+func (w *Worker) Timeout(job *river.Job[jobs.ScanArgs]) time.Duration {
+	preset, _ := jobs.ParsePreset(string(job.Args.Preset))
+	return engine.PlanFor(preset).Timeout
 }
 
 // Work は scan ジョブを処理する。queued→running→（Nuclei 実行）→done と遷移させる。
@@ -93,10 +87,18 @@ func (w *Worker) Work(ctx context.Context, job *river.Job[jobs.ScanArgs]) error 
 		return fmt.Errorf("start scan %s: %w", scanID, err)
 	}
 
+	preset, err := jobs.ParsePreset(string(job.Args.Preset))
+	if err != nil {
+		// api で検証済みのため通常起きない。不正なら設定不備として failed に確定する。
+		w.logger.Error("invalid preset on scan job; marking failed", "scan_id", scanID, "preset", job.Args.Preset)
+		return w.markFailed(ctx, scanID, pgID)
+	}
+	profile := engine.PlanFor(preset).Scan
+
 	// 最終試行かを判定する。engine の一過性エラーは再試行に委ね、最後の試行でも
 	// 失敗した場合は failed に確定させて scan が running のまま残らないようにする（#4）。
 	lastAttempt := job.Attempt >= job.MaxAttempts
-	return w.runScan(ctx, scanID, pgID, lastAttempt)
+	return w.runScan(ctx, scanID, pgID, profile, lastAttempt)
 }
 
 // runScan はスキャン対象をロードし、ガードレールを確認した上で engine スキャンを実行、
@@ -104,7 +106,7 @@ func (w *Worker) Work(ctx context.Context, job *river.Job[jobs.ScanArgs]) error 
 // 直らないため failed にする。engine の実行エラーは原則再試行に委ね、最終試行で失敗した
 // 場合のみ failed に確定する。状態更新（FailScan）に失敗した場合は error を返し、
 // scan が running のまま握り潰されないようにする（#7）。
-func (w *Worker) runScan(ctx context.Context, scanID uuid.UUID, pgID pgtype.UUID, lastAttempt bool) error {
+func (w *Worker) runScan(ctx context.Context, scanID uuid.UUID, pgID pgtype.UUID, profile engine.ScanProfile, lastAttempt bool) error {
 	target, err := w.queries.GetScanTarget(ctx, pgID)
 	if err != nil {
 		return fmt.Errorf("get scan target %s: %w", scanID, err)
@@ -149,7 +151,7 @@ func (w *Worker) runScan(ctx context.Context, scanID uuid.UUID, pgID pgtype.UUID
 		w.logger.Info("authenticated scan; injecting session headers", "scan_id", scanID, "header_count", len(headers))
 	}
 
-	findings, err := w.executeScan(ctx, pgID, scope, headers)
+	findings, err := w.executeScan(ctx, pgID, scope, headers, profile)
 	if err != nil {
 		if lastAttempt {
 			// 最終試行でも失敗: failed に確定する。状態更新に失敗したら error を返し再試行に回す。
@@ -160,7 +162,7 @@ func (w *Worker) runScan(ctx context.Context, scanID uuid.UUID, pgID pgtype.UUID
 		return fmt.Errorf("scan %s: %w", scanID, err)
 	}
 
-	payload, err := json.Marshal(scanSummary{Findings: engine.Summarize(findings)})
+	payload, err := json.Marshal(jobs.ScanSummary{Findings: engine.Summarize(findings)})
 	if err != nil {
 		return fmt.Errorf("marshal summary %s: %w", scanID, err)
 	}
@@ -180,7 +182,7 @@ func (w *Worker) runScan(ctx context.Context, scanID uuid.UUID, pgID pgtype.UUID
 // executeScan は engine スキャンを実行し、検出ごとに finding を保存しつつ収集して返す。
 // onFinding は複数 goroutine から呼ばれ得るため mutex で直列化する（contract 準拠）。
 // 既存 findings の掃除（再実行の冪等化・#5）は呼び出し元 runScan が実行前に行う。
-func (w *Worker) executeScan(ctx context.Context, pgID pgtype.UUID, scope engine.Scope, headers []string) ([]engine.Finding, error) {
+func (w *Worker) executeScan(ctx context.Context, pgID pgtype.UUID, scope engine.Scope, headers []string, profile engine.ScanProfile) ([]engine.Finding, error) {
 	var (
 		mu        sync.Mutex
 		collected []engine.Finding
@@ -199,7 +201,7 @@ func (w *Worker) executeScan(ctx context.Context, pgID pgtype.UUID, scope engine
 		collected = append(collected, f)
 	}
 
-	if err := w.engine.Scan(ctx, engine.ScanRequest{Scope: scope, Headers: headers}, onFinding); err != nil {
+	if err := w.engine.Scan(ctx, engine.ScanRequest{Scope: scope, Headers: headers, Profile: profile}, onFinding); err != nil {
 		return nil, err
 	}
 	if saveErr != nil {
