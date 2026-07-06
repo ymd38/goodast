@@ -25,6 +25,7 @@ import (
 	"github.com/ymd38/goodast/worker/internal/engine"
 	"github.com/ymd38/goodast/worker/internal/engine/nuclei"
 	"github.com/ymd38/goodast/worker/internal/scanjob"
+	"github.com/ymd38/goodast/worker/internal/templates"
 )
 
 func main() {
@@ -43,6 +44,13 @@ func run() error {
 
 	logger := newLogger(cfg.LogLevel)
 	slog.SetDefault(logger)
+
+	// fail-fast: nuclei-templates が固定版で導入済みでなければ scan は必ず失敗するため起動を中断する。
+	// テンプレートは make nuclei-templates が取得し、SDK は NUCLEI_TEMPLATES_DIR を native に読む。
+	if err := templates.Verify(cfg.NucleiTemplatesDir, cfg.NucleiTemplatesVersion); err != nil {
+		return fmt.Errorf("verify nuclei-templates: %w", err)
+	}
+	logger.Info("nuclei-templates verified", "dir", cfg.NucleiTemplatesDir, "version", cfg.NucleiTemplatesVersion)
 
 	c := dig.New()
 	providers := []any{
