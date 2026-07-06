@@ -42,7 +42,8 @@ func NewService(pool *pgxpool.Pool, riverClient *river.Client[pgx.Tx]) *Service 
 // ADR-0004: ドメイン所有確認が完了するまでスキャンを実行できない。
 // ただし localhost / 127.0.0.1 / ::1 / *.local はローカル開発用として確認をスキップする。
 func (s *Service) EnqueueScan(ctx context.Context, siteID uuid.UUID, preset jobs.Preset) (uuid.UUID, error) {
-	if _, err := jobs.ParsePreset(string(preset)); err != nil {
+	p, err := jobs.ParsePreset(string(preset))
+	if err != nil {
 		return uuid.Nil, err // jobs.ErrInvalidPreset。handler が 400 に翻訳する。
 	}
 
@@ -72,14 +73,14 @@ func (s *Service) EnqueueScan(ctx context.Context, siteID uuid.UUID, preset jobs
 
 	scan, err := q.CreateScan(ctx, db.CreateScanParams{
 		SiteID: pgtype.UUID{Bytes: siteID, Valid: true},
-		Preset: string(preset),
+		Preset: string(p),
 	})
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("create scan: %w", err)
 	}
 
 	scanID := uuid.UUID(scan.ID.Bytes)
-	if _, err := s.river.InsertTx(ctx, tx, jobs.ScanArgs{ScanID: scanID.String(), Preset: preset}, nil); err != nil {
+	if _, err := s.river.InsertTx(ctx, tx, jobs.ScanArgs{ScanID: scanID.String(), Preset: p}, nil); err != nil {
 		return uuid.Nil, fmt.Errorf("enqueue scan job: %w", err)
 	}
 

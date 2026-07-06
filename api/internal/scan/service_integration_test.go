@@ -99,4 +99,27 @@ func TestEnqueueScan(t *testing.T) {
 			t.Fatalf("EnqueueScan (localhost): %v", err)
 		}
 	})
+
+	t.Run("invalid preset: rejected before persisting", func(t *testing.T) {
+		siteID := insertSite(t, pool, "http://localhost:3000", false)
+		_, err := svc.EnqueueScan(ctx, siteID, jobs.Preset("bogus"))
+		if !errors.Is(err, jobs.ErrInvalidPreset) {
+			t.Fatalf("err = %v, want ErrInvalidPreset", err)
+		}
+	})
+
+	t.Run("empty preset normalizes to standard and persists", func(t *testing.T) {
+		siteID := insertSite(t, pool, "http://localhost:3000", false)
+		scanID, err := svc.EnqueueScan(ctx, siteID, jobs.Preset(""))
+		if err != nil {
+			t.Fatalf("EnqueueScan (empty preset): %v", err)
+		}
+		var preset string
+		if err := pool.QueryRow(ctx, `SELECT preset FROM scans WHERE id = $1`, scanID).Scan(&preset); err != nil {
+			t.Fatalf("query scan: %v", err)
+		}
+		if preset != string(jobs.PresetStandard) {
+			t.Errorf("preset = %q, want %q", preset, jobs.PresetStandard)
+		}
+	})
 }
