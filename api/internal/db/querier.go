@@ -11,7 +11,7 @@ import (
 )
 
 type Querier interface {
-	CreateScan(ctx context.Context, siteID pgtype.UUID) (Scan, error)
+	CreateScan(ctx context.Context, arg CreateScanParams) (Scan, error)
 	CreateSite(ctx context.Context, arg CreateSiteParams) (Site, error)
 	DeleteScanCredentials(ctx context.Context, siteID pgtype.UUID) error
 	GetScan(ctx context.Context, id pgtype.UUID) (Scan, error)
