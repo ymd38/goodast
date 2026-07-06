@@ -14,7 +14,8 @@ async function start() {
   startError.value = null
   const { data, error } = await client.POST('/scans', { body: { site_id: siteId, preset: preset.value } })
   starting.value = false
-  if (error || !data) {
+  // scan_id は生成型上 optional。欠落 202 は契約違反として /scans/undefined へ遷移させずエラー表示に落とす
+  if (error || !data?.scan_id) {
     startError.value = toApiErrorMessage(error)
     return
   }

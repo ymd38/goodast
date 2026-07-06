@@ -38,6 +38,15 @@ describe('pages/sites/[id]/scan', () => {
     expect(w.text()).toContain('所有確認が必要です')
   })
 
+  it('202 に scan_id が無い場合は遷移せずエラーを表示する', async () => {
+    postMock.mockResolvedValueOnce({ data: { status: 'queued' }, error: undefined })
+    const w = await mountSuspended(ScanWizard, { route: ROUTE })
+    await w.find('[data-testid="start-scan"]').trigger('click')
+    await new Promise((r) => setTimeout(r))
+    expect(navigateMock).not.toHaveBeenCalled()
+    expect(w.text()).toContain('APIとの通信に失敗しました')
+  })
+
   it('プリセットを変更すると選択した preset で開始する', async () => {
     postMock.mockResolvedValueOnce({ data: { scan_id: 'scan-1', status: 'queued', preset: 'deep' }, error: undefined })
     const w = await mountSuspended(ScanWizard, { route: ROUTE })
