@@ -20,7 +20,7 @@ const { data: sites, error } = await useAsyncData(
       <NuxtLink
         to="/sites/new"
         data-testid="register-link"
-        class="border border-on-dark px-4 py-2 font-display text-label font-bold uppercase tracking-label text-on-dark"
+        class="border border-on-dark px-4 py-2 font-display text-label font-bold uppercase tracking-label text-on-dark transition-colors hover:bg-on-dark hover:text-canvas focus-visible:bg-on-dark focus-visible:text-canvas"
       >
         サイトを登録
       </NuxtLink>
