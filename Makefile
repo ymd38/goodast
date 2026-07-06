@@ -8,6 +8,8 @@ DATABASE_URL      ?= postgres://goodast:goodast@127.0.0.1:5432/goodast?sslmode=d
 TEST_DATABASE_URL ?= $(DATABASE_URL)
 MIGRATE           ?= migrate
 NUCLEI_VERSION    ?= v3.9.0
+NUCLEI_TEMPLATES_VERSION ?= v10.4.5
+NUCLEI_TEMPLATES_DIR      ?= $(CURDIR)/nuclei-templates
 NUCLEI_TEST_TARGET ?= http://localhost:3001
 GO_MODULES        := api worker jobs secrets
 # 開発専用の暗号鍵は各開発者のローカルにのみ生成する（リポジトリに固定鍵を置かない・ADR-0003）。
@@ -28,6 +30,7 @@ setup: ## Go モジュール依存の取得・git hooks 有効化・web の pnpm
 	@for m in $(GO_MODULES); do echo "==> $$m"; (cd $$m && go mod download); done
 	@git config core.hooksPath .githooks && echo "==> git hooks 有効化（.githooks）"
 	@echo "==> web" && cd web && pnpm install
+	@$(MAKE) nuclei-templates
 
 # ---- DB / マイグレーション ----
 .PHONY: db-up
@@ -72,7 +75,9 @@ dev-api: dev-key ## API サーバを起動する（Gin）
 
 .PHONY: dev-worker
 dev-worker: dev-key ## スキャンワーカーを起動する（Nuclei SDK 隔離）
-	cd worker && DATABASE_URL="$(DATABASE_URL)" GOODAST_ENCRYPTION_KEY="$$(cat '$(DEV_KEY_FILE)')" go run ./cmd/worker
+	cd worker && DATABASE_URL="$(DATABASE_URL)" GOODAST_ENCRYPTION_KEY="$$(cat '$(DEV_KEY_FILE)')" \
+		NUCLEI_TEMPLATES_DIR="$(NUCLEI_TEMPLATES_DIR)" NUCLEI_TEMPLATES_VERSION="$(NUCLEI_TEMPLATES_VERSION)" \
+		go run ./cmd/worker
 
 .PHONY: dev-web
 dev-web: ## web 開発サーバを起動する（Nuxt・/api は :8080 へ devProxy）
@@ -120,20 +125,30 @@ juiceshop-down: ## Juice Shop を停止・削除する
 	docker compose --profile juiceshop rm -sf juiceshop
 
 .PHONY: nuclei-templates
-nuclei-templates: ## nuclei-templates を固定版で取得・更新する（版は NUCLEI_VERSION 変数）
-	go run github.com/projectdiscovery/nuclei/v3/cmd/nuclei@$(NUCLEI_VERSION) -update-templates
+nuclei-templates: ## nuclei-templates を固定 tag（NUCLEI_TEMPLATES_VERSION）で取得しマーカーを書く
+	@if [ "$$(cat '$(NUCLEI_TEMPLATES_DIR)/.goodast-templates-version' 2>/dev/null)" = "$(NUCLEI_TEMPLATES_VERSION)" ]; then \
+		echo "==> nuclei-templates $(NUCLEI_TEMPLATES_VERSION) は導入済み（スキップ）"; \
+	else \
+		echo "==> nuclei-templates $(NUCLEI_TEMPLATES_VERSION) を取得: $(NUCLEI_TEMPLATES_DIR)"; \
+		rm -rf '$(NUCLEI_TEMPLATES_DIR)'; \
+		git clone --depth 1 --branch '$(NUCLEI_TEMPLATES_VERSION)' \
+			https://github.com/projectdiscovery/nuclei-templates '$(NUCLEI_TEMPLATES_DIR)'; \
+		rm -rf '$(NUCLEI_TEMPLATES_DIR)/.git'; \
+		printf '%s' '$(NUCLEI_TEMPLATES_VERSION)' > '$(NUCLEI_TEMPLATES_DIR)/.goodast-templates-version'; \
+		echo "==> マーカー書き込み完了"; \
+	fi
 
 .PHONY: nuclei-scan
 nuclei-scan: ## 対象へ実スキャン結合テスト（NUCLEI_TEST_TARGET / NUCLEI_TEST_TAGS）
-	cd worker && NUCLEI_TEST_TARGET="$(NUCLEI_TEST_TARGET)" \
+	cd worker && NUCLEI_TEST_TARGET="$(NUCLEI_TEST_TARGET)" NUCLEI_TEMPLATES_DIR="$(NUCLEI_TEMPLATES_DIR)" \
 		go test -tags=integration -v -timeout 8m -run TestNucleiEngineScan ./internal/engine/nuclei/
 
 .PHONY: nuclei-parity
 nuclei-parity: ## 検知精度 検証: Nuclei CLI ベースライン vs goodast の欠落ゼロ突合（要 make juiceshop-up）
-	cd worker && NUCLEI_TEST_TARGET="$(NUCLEI_TEST_TARGET)" NUCLEI_TEST_TAGS="$(NUCLEI_TEST_TAGS)" \
+	cd worker && NUCLEI_TEST_TARGET="$(NUCLEI_TEST_TARGET)" NUCLEI_TEST_TAGS="$(NUCLEI_TEST_TAGS)" NUCLEI_TEMPLATES_DIR="$(NUCLEI_TEMPLATES_DIR)" \
 		go test -tags=integration -v -timeout 25m -run TestNucleiCLIParity ./internal/engine/nuclei/
 
 .PHONY: nuclei-auth
 nuclei-auth: ## 認証後スキャン検証（§10-3）: ヘッダ注入の到達（決定的）+ 認証カバレッジ縮小なし（要 make juiceshop-up）
-	cd worker && NUCLEI_TEST_TARGET="$(NUCLEI_TEST_TARGET)" NUCLEI_TEST_TAGS="$(NUCLEI_TEST_TAGS)" \
+	cd worker && NUCLEI_TEST_TARGET="$(NUCLEI_TEST_TARGET)" NUCLEI_TEST_TAGS="$(NUCLEI_TEST_TAGS)" NUCLEI_TEMPLATES_DIR="$(NUCLEI_TEMPLATES_DIR)" \
 		go test -tags=integration -v -timeout 30m -run 'TestNucleiHeaderInjection|TestNucleiAuthenticatedCoverage' ./internal/engine/nuclei/
