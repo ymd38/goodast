@@ -22,13 +22,15 @@ type Finding struct {
 // 呼ばれ得るため、実装は goroutine-safe であること（呼び出し側の責務）。
 type FindingCallback func(Finding)
 
-// ScanRequest は 1 回のスキャン要求。対象と許可境界（スコープ）を内包する。
+// ScanRequest は 1 回のスキャン要求。対象・許可境界・実行パラメータを内包する。
 type ScanRequest struct {
 	// Scope はスキャン対象の許可境界（allowlist）。エンジンはこの外へ逸脱しない。
 	Scope Scope
 	// Headers は全リクエストに付与する認証ヘッダ（"Name: Value" 形式）。
 	// 認証後スキャンで持ち込みセッションを注入する（ADR-0003）。未認証時は空。
 	Headers []string
+	// Profile は preset 由来の実行パラメータ（テンプレート選択・レート）。
+	Profile ScanProfile
 }
 
 // Engine はスキャンエンジンの抽象。

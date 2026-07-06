@@ -1,6 +1,6 @@
 -- name: CreateScan :one
-INSERT INTO scans (site_id)
-VALUES ($1)
+INSERT INTO scans (site_id, preset)
+VALUES ($1, $2)
 RETURNING *;
 
 -- name: GetScan :one

@@ -124,4 +124,11 @@ func TestScanHandlerFlow(t *testing.T) {
 			t.Errorf("empty body: code=%d want 400", code)
 		}
 	})
+
+	t.Run("invalid preset: 400", func(t *testing.T) {
+		siteID := insertScanTestSite(t, pool, "https://example.com", true)
+		if code, _ := doJSON(t, r, http.MethodPost, "/scans", `{"site_id":"`+siteID.String()+`","preset":"bogus"}`); code != http.StatusBadRequest {
+			t.Errorf("invalid preset: code=%d want 400", code)
+		}
+	})
 }

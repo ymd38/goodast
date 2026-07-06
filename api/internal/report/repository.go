@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/ymd38/goodast/api/internal/db"
+	"github.com/ymd38/goodast/jobs"
 )
 
 // Repository は scans テーブルからダッシュボード用データを読み出し、sqlc row ↔ ドメイン
@@ -45,17 +46,16 @@ func (r *Repository) DoneScanPoints(ctx context.Context, siteID uuid.UUID) ([]Sc
 	return points, nil
 }
 
-// decodeSummaryCounts は summary_json から重大度カウントを取り出す。
-// worker は scanjob.scanSummary（{"findings": {...counts...}}）として書き込むため、
-// カウントは "findings" キーの下にネストしている。ここがその構造と一致させる唯一の境界。
+// decodeSummaryCounts は summary_json から重大度カウントを取り出す。worker が書く形は
+// 共有型 jobs.ScanSummary（{"findings":{...}}）で固定されており、ここでそれを経由して
+// api 固有の SeverityCounts（スコア計算メソッドを持つ）へ変換する。両側が同一の共有型を
+// 経由するため、形の独立定義によるドリフトが構造的に起きない。
 func decodeSummaryCounts(raw []byte) (SeverityCounts, error) {
-	var wrapper struct {
-		Findings SeverityCounts `json:"findings"`
-	}
-	if err := json.Unmarshal(raw, &wrapper); err != nil {
+	var summary jobs.ScanSummary
+	if err := json.Unmarshal(raw, &summary); err != nil {
 		return SeverityCounts{}, err
 	}
-	return wrapper.Findings, nil
+	return SeverityCounts(summary.Findings), nil
 }
 
 // scanDate は時系列上の点の日時を返す。完了時刻（finished_at）を優先し、

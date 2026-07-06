@@ -5,6 +5,7 @@ sql:
     # ため除外（新しいアプリ migration を追加したらこのリストに追記する）。
     schema:
       - "../migrations/000001_initial_schema.up.sql"
+      - "../migrations/000006_scans_preset.up.sql"
     queries: "internal/db/queries"
     gen:
       go:

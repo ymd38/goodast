@@ -30,6 +30,7 @@ type Scan struct {
 	FinishedAt    pgtype.Timestamptz `json:"finished_at"`
 	SummaryJson   []byte             `json:"summary_json"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	Preset        string             `json:"preset"`
 }
 
 type ScanCredential struct {
