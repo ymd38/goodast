@@ -11,8 +11,10 @@ export function useScanPolling(scanId: string, opts: { intervalMs?: number } = {
   const error = ref<string | null>(null)
   const done = ref(false)
   let timer: ReturnType<typeof setTimeout> | null = null
+  let stopped = false
 
   function stop() {
+    stopped = true
     if (timer) {
       clearTimeout(timer)
       timer = null
@@ -23,6 +25,8 @@ export function useScanPolling(scanId: string, opts: { intervalMs?: number } = {
     const { data, error: apiError } = await client.GET('/scans/{id}', {
       params: { path: { id: scanId } },
     })
+    // await 中に stop（unmount 等）された場合は状態を触らず再スケジュールもしない
+    if (stopped) return
     if (apiError || !data) {
       error.value = toApiErrorMessage(apiError)
       done.value = true
@@ -39,6 +43,8 @@ export function useScanPolling(scanId: string, opts: { intervalMs?: number } = {
   }
 
   function start() {
+    stop() // 再入時に既存のポーリングチェーンを解除してから再開する（timer リーク防止）
+    stopped = false
     done.value = false
     error.value = null
     void tick()

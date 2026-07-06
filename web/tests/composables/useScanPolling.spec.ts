@@ -72,6 +72,33 @@ describe('useScanPolling', () => {
     expect(get.mock.calls.length).toBe(1)
   })
 
+  it('in-flight 中に stop すると解決後も状態更新・再スケジュールしない', async () => {
+    let resolveGet!: (v: { data: unknown; error: unknown }) => void
+    get.mockImplementationOnce(
+      () => new Promise((resolve) => { resolveGet = resolve }),
+    )
+    const p = useScanPolling('x', { intervalMs: 1000 })
+    p.start()
+    await vi.advanceTimersByTimeAsync(0) // GET は pending のまま
+    p.stop() // 解決前に停止（unmount 相当）
+    resolveGet({ data: { id: 'x', status: 'running' }, error: undefined })
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(get.mock.calls.length).toBe(1) // 再スケジュールされない
+    expect(p.state.value).toBeNull() // 停止後は状態を触らない
+    expect(p.done.value).toBe(false)
+  })
+
+  it('start を再度呼ぶと既存タイマーを解除してから再開する（多重ポーリングしない）', async () => {
+    get.mockResolvedValue({ data: { id: 'x', status: 'running' }, error: undefined })
+    const p = useScanPolling('x', { intervalMs: 1000 })
+    p.start()
+    await vi.advanceTimersByTimeAsync(0) // 1 回目・旧 timer が arm される
+    p.start() // 旧 timer を解除して再開
+    await vi.advanceTimersByTimeAsync(0) // 2 回目（再開の即時 tick）
+    await vi.advanceTimersByTimeAsync(1000) // 3 回目（単一チェーンのみ）
+    expect(get.mock.calls.length).toBe(3)
+  })
+
   it('コンポーネント内で使うと unmount 時に自動停止する', async () => {
     get.mockResolvedValue({ data: { id: 'x', status: 'running' }, error: undefined })
     let handle!: ReturnType<typeof useScanPolling>
