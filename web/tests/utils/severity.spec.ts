@@ -28,4 +28,8 @@ describe('severity', () => {
     ] as Pick<Finding, 'severity'>[]
     expect(sortFindingsBySeverity(input as Finding[]).map((f) => f.severity)).toEqual(['Critical', 'Low', 'Unknown'])
   })
+  it('severity 未設定（optional）も未知扱いで末尾にソートする', () => {
+    const input = [{}, { severity: 'Low' }] as Finding[]
+    expect(sortFindingsBySeverity(input).map((f) => f.severity)).toEqual(['Low', undefined])
+  })
 })
