@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/ymd38/goodast/api/internal/scan"
+	"github.com/ymd38/goodast/jobs"
 )
 
 func TestWriteScanError(t *testing.T) {
@@ -25,6 +26,7 @@ func TestWriteScanError(t *testing.T) {
 		{"site not found", scan.ErrSiteNotFound, http.StatusNotFound},
 		{"ownership not verified", scan.ErrOwnershipNotVerified, http.StatusForbidden},
 		{"wrapped domain error", errorsJoinWrap(scan.ErrOwnershipNotVerified), http.StatusForbidden},
+		{"invalid preset", jobs.ErrInvalidPreset, http.StatusBadRequest},
 		{"unexpected error", errors.New("db down"), http.StatusInternalServerError},
 	}
 	for _, tt := range tests {

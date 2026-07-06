@@ -187,7 +187,7 @@ func TestScanWorker(t *testing.T) {
 	t.Run("queued scan completes and persists findings", func(t *testing.T) {
 		siteID := seedSite(t, pool, "http://localhost:3000", false)
 		scanID := seedScan(t, pool, siteID, "queued")
-		if _, err := insertOnly.Insert(ctx, jobs.ScanArgs{ScanID: scanID}, nil); err != nil {
+		if _, err := insertOnly.Insert(ctx, jobs.ScanArgs{ScanID: scanID, Preset: jobs.PresetLight}, nil); err != nil {
 			t.Fatalf("enqueue: %v", err)
 		}
 		waitForStatus(t, pool, scanID, "done")
@@ -215,7 +215,7 @@ func TestScanWorker(t *testing.T) {
 			scanID); err != nil {
 			t.Fatalf("seed stale finding: %v", err)
 		}
-		if _, err := insertOnly.Insert(ctx, jobs.ScanArgs{ScanID: scanID}, nil); err != nil {
+		if _, err := insertOnly.Insert(ctx, jobs.ScanArgs{ScanID: scanID, Preset: jobs.PresetLight}, nil); err != nil {
 			t.Fatalf("enqueue: %v", err)
 		}
 		waitForStatus(t, pool, scanID, "done")
@@ -230,7 +230,7 @@ func TestScanWorker(t *testing.T) {
 	t.Run("unverified public site is failed", func(t *testing.T) {
 		siteID := seedSite(t, pool, "https://example.com", false)
 		scanID := seedScan(t, pool, siteID, "queued")
-		if _, err := insertOnly.Insert(ctx, jobs.ScanArgs{ScanID: scanID}, nil); err != nil {
+		if _, err := insertOnly.Insert(ctx, jobs.ScanArgs{ScanID: scanID, Preset: jobs.PresetLight}, nil); err != nil {
 			t.Fatalf("enqueue: %v", err)
 		}
 		waitForStatus(t, pool, scanID, "failed")
@@ -276,7 +276,7 @@ func TestScanWorkerEngineFailureMarksFailed(t *testing.T) {
 	siteID := seedSite(t, pool, "http://localhost:3000", false)
 	scanID := seedScan(t, pool, siteID, "queued")
 	// MaxAttempts=1 で「最終試行」を成立させ、failed 確定パスを通す。
-	if _, err := insertOnly.Insert(ctx, jobs.ScanArgs{ScanID: scanID}, &river.InsertOpts{MaxAttempts: 1}); err != nil {
+	if _, err := insertOnly.Insert(ctx, jobs.ScanArgs{ScanID: scanID, Preset: jobs.PresetLight}, &river.InsertOpts{MaxAttempts: 1}); err != nil {
 		t.Fatalf("enqueue: %v", err)
 	}
 	waitForStatus(t, pool, scanID, "failed")
@@ -337,7 +337,7 @@ func TestScanWorkerInjectsSessionHeaders(t *testing.T) {
 	}
 
 	scanID := seedScan(t, pool, siteID, "queued")
-	if _, err := insertOnly.Insert(ctx, jobs.ScanArgs{ScanID: scanID}, nil); err != nil {
+	if _, err := insertOnly.Insert(ctx, jobs.ScanArgs{ScanID: scanID, Preset: jobs.PresetLight}, nil); err != nil {
 		t.Fatalf("enqueue: %v", err)
 	}
 	waitForStatus(t, pool, scanID, "done")
@@ -413,7 +413,7 @@ func TestScanWorkerCredentialDecryptFailureMarksFailed(t *testing.T) {
 		scanID); err != nil {
 		t.Fatalf("seed stale finding: %v", err)
 	}
-	if _, err := insertOnly.Insert(ctx, jobs.ScanArgs{ScanID: scanID}, nil); err != nil {
+	if _, err := insertOnly.Insert(ctx, jobs.ScanArgs{ScanID: scanID, Preset: jobs.PresetLight}, nil); err != nil {
 		t.Fatalf("enqueue: %v", err)
 	}
 	waitForStatus(t, pool, scanID, "failed")

@@ -12,13 +12,18 @@ import (
 )
 
 const createScan = `-- name: CreateScan :one
-INSERT INTO scans (site_id)
-VALUES ($1)
-RETURNING id, site_id, status, engine_version, started_at, finished_at, summary_json, created_at
+INSERT INTO scans (site_id, preset)
+VALUES ($1, $2)
+RETURNING id, site_id, status, engine_version, started_at, finished_at, summary_json, created_at, preset
 `
 
-func (q *Queries) CreateScan(ctx context.Context, siteID pgtype.UUID) (Scan, error) {
-	row := q.db.QueryRow(ctx, createScan, siteID)
+type CreateScanParams struct {
+	SiteID pgtype.UUID `json:"site_id"`
+	Preset string      `json:"preset"`
+}
+
+func (q *Queries) CreateScan(ctx context.Context, arg CreateScanParams) (Scan, error) {
+	row := q.db.QueryRow(ctx, createScan, arg.SiteID, arg.Preset)
 	var i Scan
 	err := row.Scan(
 		&i.ID,
@@ -29,12 +34,13 @@ func (q *Queries) CreateScan(ctx context.Context, siteID pgtype.UUID) (Scan, err
 		&i.FinishedAt,
 		&i.SummaryJson,
 		&i.CreatedAt,
+		&i.Preset,
 	)
 	return i, err
 }
 
 const getScan = `-- name: GetScan :one
-SELECT id, site_id, status, engine_version, started_at, finished_at, summary_json, created_at FROM scans WHERE id = $1
+SELECT id, site_id, status, engine_version, started_at, finished_at, summary_json, created_at, preset FROM scans WHERE id = $1
 `
 
 func (q *Queries) GetScan(ctx context.Context, id pgtype.UUID) (Scan, error) {
@@ -49,6 +55,7 @@ func (q *Queries) GetScan(ctx context.Context, id pgtype.UUID) (Scan, error) {
 		&i.FinishedAt,
 		&i.SummaryJson,
 		&i.CreatedAt,
+		&i.Preset,
 	)
 	return i, err
 }
@@ -97,7 +104,7 @@ func (q *Queries) ListDoneScanSummaries(ctx context.Context, siteID pgtype.UUID)
 }
 
 const listScansBySite = `-- name: ListScansBySite :many
-SELECT id, site_id, status, engine_version, started_at, finished_at, summary_json, created_at FROM scans
+SELECT id, site_id, status, engine_version, started_at, finished_at, summary_json, created_at, preset FROM scans
 WHERE site_id = $1
 ORDER BY created_at DESC
 `
@@ -120,6 +127,7 @@ func (q *Queries) ListScansBySite(ctx context.Context, siteID pgtype.UUID) ([]Sc
 			&i.FinishedAt,
 			&i.SummaryJson,
 			&i.CreatedAt,
+			&i.Preset,
 		); err != nil {
 			return nil, err
 		}

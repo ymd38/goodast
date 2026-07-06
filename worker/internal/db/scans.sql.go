@@ -15,7 +15,7 @@ const completeScan = `-- name: CompleteScan :one
 UPDATE scans
 SET status = 'done', finished_at = now(), summary_json = $2
 WHERE id = $1 AND status = 'running'
-RETURNING id, site_id, status, engine_version, started_at, finished_at, summary_json, created_at
+RETURNING id, site_id, status, engine_version, started_at, finished_at, summary_json, created_at, preset
 `
 
 type CompleteScanParams struct {
@@ -35,6 +35,7 @@ func (q *Queries) CompleteScan(ctx context.Context, arg CompleteScanParams) (Sca
 		&i.FinishedAt,
 		&i.SummaryJson,
 		&i.CreatedAt,
+		&i.Preset,
 	)
 	return i, err
 }
@@ -43,7 +44,7 @@ const failScan = `-- name: FailScan :one
 UPDATE scans
 SET status = 'failed', finished_at = now()
 WHERE id = $1 AND status IN ('queued', 'running')
-RETURNING id, site_id, status, engine_version, started_at, finished_at, summary_json, created_at
+RETURNING id, site_id, status, engine_version, started_at, finished_at, summary_json, created_at, preset
 `
 
 func (q *Queries) FailScan(ctx context.Context, id pgtype.UUID) (Scan, error) {
@@ -58,13 +59,14 @@ func (q *Queries) FailScan(ctx context.Context, id pgtype.UUID) (Scan, error) {
 		&i.FinishedAt,
 		&i.SummaryJson,
 		&i.CreatedAt,
+		&i.Preset,
 	)
 	return i, err
 }
 
 const getScan = `-- name: GetScan :one
 
-SELECT id, site_id, status, engine_version, started_at, finished_at, summary_json, created_at FROM scans WHERE id = $1
+SELECT id, site_id, status, engine_version, started_at, finished_at, summary_json, created_at, preset FROM scans WHERE id = $1
 `
 
 // 状態遷移ガード: WHERE に現在の status を含め、queued→running→done/failed の
@@ -82,6 +84,7 @@ func (q *Queries) GetScan(ctx context.Context, id pgtype.UUID) (Scan, error) {
 		&i.FinishedAt,
 		&i.SummaryJson,
 		&i.CreatedAt,
+		&i.Preset,
 	)
 	return i, err
 }
@@ -122,7 +125,7 @@ const startScan = `-- name: StartScan :one
 UPDATE scans
 SET status = 'running', started_at = now(), engine_version = $2
 WHERE id = $1 AND status = 'queued'
-RETURNING id, site_id, status, engine_version, started_at, finished_at, summary_json, created_at
+RETURNING id, site_id, status, engine_version, started_at, finished_at, summary_json, created_at, preset
 `
 
 type StartScanParams struct {
@@ -142,6 +145,7 @@ func (q *Queries) StartScan(ctx context.Context, arg StartScanParams) (Scan, err
 		&i.FinishedAt,
 		&i.SummaryJson,
 		&i.CreatedAt,
+		&i.Preset,
 	)
 	return i, err
 }

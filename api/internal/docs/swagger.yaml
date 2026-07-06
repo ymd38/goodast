@@ -211,6 +211,9 @@ definitions:
     type: object
   internal_handler.startScanRequest:
     properties:
+      preset:
+        description: 省略可。空なら standard（jobs.ParsePreset）。
+        type: string
       site_id:
         type: string
     required:
@@ -218,6 +221,8 @@ definitions:
     type: object
   internal_handler.startScanResponse:
     properties:
+      preset:
+        type: string
       scan_id:
         type: string
       status:
@@ -247,7 +252,7 @@ paths:
       consumes:
       - application/json
       description: site_id のスキャンを enqueue する（worker が非同期実行）。所有確認前は 403。202 で scan_id/status=queued
-        を返す。
+        を返す。preset（light/standard/deep・省略時 standard）を任意で受け付ける。
       parameters:
       - description: スキャン対象サイト
         in: body

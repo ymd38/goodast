@@ -26,9 +26,8 @@ const (
 	scoreMin = 0
 )
 
-// SeverityCounts は 1 スキャンの重大度別 finding 件数。
-// json タグは worker が保存する scans.summary_json（engine.Summary）と一致させ、
-// ダッシュボードが DB 値をそのままデコードしてスコア計算に渡せるようにする。
+// SeverityCounts は 1 スキャンの重大度別 finding 件数（スコア計算用・api 固有）。
+// フィールドは共有 wire 型 jobs.SeverityCounts と一致させ、repository が型変換で橋渡しする。
 type SeverityCounts struct {
 	Critical int `json:"critical"`
 	High     int `json:"high"`

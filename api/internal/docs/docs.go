@@ -17,7 +17,7 @@ const docTemplate = `{
     "paths": {
         "/scans": {
             "post": {
-                "description": "site_id のスキャンを enqueue する（worker が非同期実行）。所有確認前は 403。202 で scan_id/status=queued を返す。",
+                "description": "site_id のスキャンを enqueue する（worker が非同期実行）。所有確認前は 403。202 で scan_id/status=queued を返す。preset（light/standard/deep・省略時 standard）を任意で受け付ける。",
                 "consumes": [
                     "application/json"
                 ],
@@ -889,6 +889,10 @@ const docTemplate = `{
                 "site_id"
             ],
             "properties": {
+                "preset": {
+                    "description": "省略可。空なら standard（jobs.ParsePreset）。",
+                    "type": "string"
+                },
                 "site_id": {
                     "type": "string"
                 }
@@ -897,6 +901,9 @@ const docTemplate = `{
         "internal_handler.startScanResponse": {
             "type": "object",
             "properties": {
+                "preset": {
+                    "type": "string"
+                },
                 "scan_id": {
                     "type": "string"
                 },

@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ymd38/goodast/jobs"
 	"github.com/ymd38/goodast/worker/internal/engine"
 	"github.com/ymd38/goodast/worker/internal/engine/nuclei"
 )
@@ -70,11 +71,11 @@ func TestNucleiHeaderInjection(t *testing.T) {
 	}
 
 	// misconfig タグはヘッダ検査系の軽量テンプレートが GET を送るため注入確認が速い。
-	cfg := nuclei.DefaultConfig()
-	cfg.Tags = []string{"misconfig"}
+	profile := engine.PlanFor(jobs.PresetLight).Scan
+	profile.Tags = []string{"misconfig"}
 
-	eng := nuclei.New(cfg)
-	req := engine.ScanRequest{Scope: scope, Headers: []string{sentinelName + ": " + sentinelValue}}
+	eng := nuclei.New()
+	req := engine.ScanRequest{Scope: scope, Headers: []string{sentinelName + ": " + sentinelValue}, Profile: profile}
 	// 注入確認後の早期 cancel（Canceled）と時間切れ（DeadlineExceeded）はどちらも想定内。
 	if err := eng.Scan(ctx, req, func(engine.Finding) {}); err != nil &&
 		!errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
@@ -114,15 +115,15 @@ func TestNucleiAuthenticatedCoverage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewScope(%q): %v", target, err)
 	}
-	cfg := nuclei.DefaultConfig()
-	cfg.Tags = tagList
+	profile := engine.PlanFor(jobs.PresetLight).Scan
+	profile.Tags = tagList
 
 	// --- 未認証スキャン ---
-	unauth := runGoodastScan(t, scope, cfg, nil)
+	unauth := runGoodastScan(t, scope, profile, nil)
 
 	// --- 認証後スキャン（Juice Shop に実ログインして JWT を注入）---
 	bearer := juiceShopBearer(t, target)
-	auth := runGoodastScan(t, scope, cfg, []string{"Authorization: Bearer " + bearer})
+	auth := runGoodastScan(t, scope, profile, []string{"Authorization: Bearer " + bearer})
 
 	unauthSet := templateSet(unauth)
 	authSet := templateSet(auth)

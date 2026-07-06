@@ -4,9 +4,11 @@
 package jobs
 
 // ScanArgs はスキャン実行ジョブの引数。worker は ScanID から scan / site / credentials を
-// DB ロードするため、ペイロードは ScanID のみに保つ。
+// DB ロードする。Preset は river の Timeout callback（context/DB を持てない）が
+// タイムアウト決定に使うため、DB カラムとは別にジョブ引数にも載せる。
 type ScanArgs struct {
 	ScanID string `json:"scan_id"`
+	Preset Preset `json:"preset"`
 }
 
 // Kind は river のジョブ種別識別子。変更すると既存ジョブと互換でなくなるため固定する。
