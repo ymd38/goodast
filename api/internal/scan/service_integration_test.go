@@ -16,6 +16,7 @@ import (
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 
 	"github.com/ymd38/goodast/api/internal/scan"
+	"github.com/ymd38/goodast/jobs"
 )
 
 func newTestService(t *testing.T, pool *pgxpool.Pool) *scan.Service {
@@ -55,7 +56,7 @@ func TestEnqueueScan(t *testing.T) {
 
 	t.Run("verified site: atomic enqueue", func(t *testing.T) {
 		siteID := insertSite(t, pool, "https://example.com", true)
-		scanID, err := svc.EnqueueScan(ctx, siteID)
+		scanID, err := svc.EnqueueScan(ctx, siteID, jobs.PresetStandard)
 		if err != nil {
 			t.Fatalf("EnqueueScan: %v", err)
 		}
@@ -79,7 +80,7 @@ func TestEnqueueScan(t *testing.T) {
 
 	t.Run("unverified public site: rejected, nothing persisted", func(t *testing.T) {
 		siteID := insertSite(t, pool, "https://example.com", false)
-		_, err := svc.EnqueueScan(ctx, siteID)
+		_, err := svc.EnqueueScan(ctx, siteID, jobs.PresetStandard)
 		if !errors.Is(err, scan.ErrOwnershipNotVerified) {
 			t.Fatalf("err = %v, want ErrOwnershipNotVerified", err)
 		}
@@ -94,7 +95,7 @@ func TestEnqueueScan(t *testing.T) {
 
 	t.Run("localhost site: enqueues without verification", func(t *testing.T) {
 		siteID := insertSite(t, pool, "http://localhost:3000", false)
-		if _, err := svc.EnqueueScan(ctx, siteID); err != nil {
+		if _, err := svc.EnqueueScan(ctx, siteID, jobs.PresetStandard); err != nil {
 			t.Fatalf("EnqueueScan (localhost): %v", err)
 		}
 	})
