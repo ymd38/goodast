@@ -20,6 +20,9 @@ type Config struct {
 	LogLevel        slog.Level
 	DBMaxConns      int32
 	DBMinConns      int32
+
+	NucleiTemplatesDir     string // NUCLEI_TEMPLATES_DIR。SDK が読むのと同一。templates.Verify で検証する。
+	NucleiTemplatesVersion string // NUCLEI_TEMPLATES_VERSION。固定 tag。マーカーと突合する。
 }
 
 const (
@@ -41,6 +44,15 @@ func Load() (*Config, error) {
 	encKey := os.Getenv("GOODAST_ENCRYPTION_KEY")
 	if encKey == "" {
 		return nil, fmt.Errorf("GOODAST_ENCRYPTION_KEY is required")
+	}
+
+	templatesDir := os.Getenv("NUCLEI_TEMPLATES_DIR")
+	if templatesDir == "" {
+		return nil, fmt.Errorf("NUCLEI_TEMPLATES_DIR is required")
+	}
+	templatesVersion := os.Getenv("NUCLEI_TEMPLATES_VERSION")
+	if templatesVersion == "" {
+		return nil, fmt.Errorf("NUCLEI_TEMPLATES_VERSION is required")
 	}
 
 	level, err := parseLogLevel(getEnv("LOG_LEVEL", "info"))
@@ -82,6 +94,9 @@ func Load() (*Config, error) {
 		LogLevel:        level,
 		DBMaxConns:      maxConns,
 		DBMinConns:      minConns,
+
+		NucleiTemplatesDir:     templatesDir,
+		NucleiTemplatesVersion: templatesVersion,
 	}, nil
 }
 
