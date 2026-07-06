@@ -56,11 +56,13 @@ describe('pages/scans/[id]', () => {
     expect(getMock).not.toHaveBeenCalled()
   })
 
-  it('ポーリング自体が失敗し state 未取得のまま done になった場合は進捗表示に留まる', async () => {
+  it('ポーリング自体が失敗した場合はエラーを表示し進捗表示に留まらない', async () => {
     polling.done.value = true
+    polling.error.value = 'スキャンが見つかりません'
     // state は null のまま（poll 自体が最初から失敗して停止したケース）
     const w = await mountPage()
-    expect(w.text()).toContain('待機中')
+    expect(w.find('[data-testid="poll-error"]').text()).toContain('スキャンが見つかりません')
+    expect(w.text()).not.toContain('待機中')
     expect(getMock).not.toHaveBeenCalled()
   })
 

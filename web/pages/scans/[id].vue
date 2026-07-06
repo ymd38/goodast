@@ -2,9 +2,9 @@
 import type { Finding, LatestState } from '~/types/goodast'
 
 const route = useRoute()
-const scanId = route.params.id as string
+const scanId = String(route.params.id)
 const client = useApiClient()
-const { state, done, start } = useScanPolling(scanId)
+const { state, error: pollError, done, start } = useScanPolling(scanId)
 
 const findings = ref<Finding[]>([])
 const findingsError = ref<string | null>(null)
@@ -43,7 +43,10 @@ onMounted(start)
   <section class="mx-auto max-w-3xl">
     <h1 class="font-display text-display-sm font-bold uppercase text-on-dark">スキャン結果</h1>
 
-    <ScanProgress v-if="!isDone" class="mt-8" :status="state?.status ?? 'queued'" />
+    <p v-if="pollError" data-testid="poll-error" class="mt-8 border border-m-red p-4 text-body-sm text-m-red">
+      {{ pollError }}
+    </p>
+    <ScanProgress v-else-if="!isDone" class="mt-8" :status="state?.status ?? 'queued'" />
 
     <template v-else>
       <DashboardScoreCard class="mt-8" :latest="latest" />
