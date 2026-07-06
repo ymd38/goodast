@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ymd38/goodast/jobs"
 	"github.com/ymd38/goodast/worker/internal/engine"
 	"github.com/ymd38/goodast/worker/internal/engine/nuclei"
 )
@@ -32,14 +33,14 @@ func TestNucleiEngineScan(t *testing.T) {
 		t.Fatalf("NewScope(%q): %v", target, err)
 	}
 
-	cfg := nuclei.DefaultConfig()
+	profile := engine.PlanFor(jobs.PresetLight).Scan
 	tags := os.Getenv("NUCLEI_TEST_TAGS")
 	if tags == "" {
 		tags = "misconfig,tech"
 	}
-	cfg.Tags = strings.Split(tags, ",")
+	profile.Tags = strings.Split(tags, ",")
 
-	eng := nuclei.New(cfg)
+	eng := nuclei.New()
 	if eng.Version() == "" {
 		t.Fatal("Version() returned empty")
 	}
@@ -59,7 +60,7 @@ func TestNucleiEngineScan(t *testing.T) {
 
 	// 時間切れ（DeadlineExceeded）はキャンセルまでに集めた findings で検証を続ける
 	// （対象/テンプレ次第でフル完走しない場合への耐性）。それ以外のエラーは失敗扱い。
-	if err := eng.Scan(ctx, engine.ScanRequest{Scope: scope}, onFinding); err != nil && !errors.Is(err, context.DeadlineExceeded) {
+	if err := eng.Scan(ctx, engine.ScanRequest{Scope: scope, Profile: profile}, onFinding); err != nil && !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("Scan: %v", err)
 	}
 

@@ -29,7 +29,7 @@ import (
 // 前提: Juice Shop を起動し（make juiceshop-up）NUCLEI_TEST_TARGET=http://localhost:3001 を指す。
 // nuclei-templates が導入済みであること。未設定なら skip する。
 //
-// 公平な比較のため、ベースライン CLI にも goodast の DefaultConfig と同一のフィルタ
+// 公平な比較のため、ベースライン CLI にも goodast の Profile と同一のフィルタ
 // （tags / exclude-tags dos,intrusive / rate-limit）を適用する。goodast が意図的に落とす
 // もの（破壊的タグ・スコープ外）を「欠落」と誤検出しないよう、ベースラインは scope.Allows で
 // 絞った集合を正とする。
@@ -57,16 +57,22 @@ func TestNucleiCLIParity(t *testing.T) {
 		t.Fatalf("NewScope(%q): %v", target, err)
 	}
 
-	cfg := nuclei.DefaultConfig()
-	cfg.Tags = tagList
+	// parity は preset ではなく明示 Profile を使い、CLI baseline と goodast のタグ集合が
+	// プリセット定義のドリフトでズレないようにする（brief 記載の方針）。
+	profile := engine.ScanProfile{
+		Tags:        tagList,
+		ExcludeTags: []string{"dos", "intrusive"},
+		RateLimit:   10,
+		RatePeriod:  time.Second,
+	}
 
 	// --- goodast エンジン経由の検出（未認証）---
-	goodast := runGoodastScan(t, scope, cfg, nil)
+	goodast := runGoodastScan(t, scope, profile, nil)
 	t.Logf("goodast: %d findings (tags=%s, exclude=%v, rate=%d/s)",
-		len(goodast), tags, cfg.ExcludeTags, cfg.RateLimit)
+		len(goodast), tags, profile.ExcludeTags, profile.RateLimit)
 
 	// --- Nuclei CLI ベースライン（同一フィルタ）---
-	baseline := runNucleiCLIBaseline(t, target, tagList, cfg)
+	baseline := runNucleiCLIBaseline(t, target, tagList, profile)
 	t.Logf("baseline CLI: %d findings (before scope filter)", len(baseline))
 
 	// --- ベースラインを scope.Allows で絞り、正とする ---
@@ -127,9 +133,9 @@ func TestNucleiCLIParity(t *testing.T) {
 
 // runGoodastScan は goodast エンジンで対象をスキャンし、template-id|url をキーに findings を返す。
 // headers は認証後スキャンで注入する "Name: Value" 形式のヘッダ（未認証は nil）。
-func runGoodastScan(t *testing.T, scope engine.Scope, cfg nuclei.Config, headers []string) map[string]engine.Finding {
+func runGoodastScan(t *testing.T, scope engine.Scope, profile engine.ScanProfile, headers []string) map[string]engine.Finding {
 	t.Helper()
-	eng := nuclei.New(cfg)
+	eng := nuclei.New()
 	if eng.Version() == "" {
 		t.Fatal("goodast engine Version() returned empty")
 	}
@@ -146,7 +152,8 @@ func runGoodastScan(t *testing.T, scope engine.Scope, cfg nuclei.Config, headers
 		out[f.TemplateID+"|"+f.URL] = f
 	}
 	// 時間切れは収集済みの findings で検証を続ける（既存 TestNucleiEngineScan と同方針）。
-	if err := eng.Scan(ctx, engine.ScanRequest{Scope: scope, Headers: headers}, onFinding); err != nil && !errors.Is(err, context.DeadlineExceeded) {
+	req := engine.ScanRequest{Scope: scope, Headers: headers, Profile: profile}
+	if err := eng.Scan(ctx, req, onFinding); err != nil && !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("goodast Scan: %v", err)
 	}
 	return out
@@ -177,7 +184,7 @@ func (f cliFinding) matchedAt() string {
 
 // runNucleiCLIBaseline は Nuclei CLI を goodast と同一フィルタで実行し JSONL を解析して返す。
 // バージョンを SDK（go.mod の v3.9.0）と一致させるため、@version を付けず module 解決に委ねる。
-func runNucleiCLIBaseline(t *testing.T, target string, tags []string, cfg nuclei.Config) []cliFinding {
+func runNucleiCLIBaseline(t *testing.T, target string, tags []string, profile engine.ScanProfile) []cliFinding {
 	t.Helper()
 
 	exportPath := filepath.Join(t.TempDir(), "baseline.jsonl")
@@ -185,8 +192,8 @@ func runNucleiCLIBaseline(t *testing.T, target string, tags []string, cfg nuclei
 		"run", "github.com/projectdiscovery/nuclei/v3/cmd/nuclei",
 		"-target", target,
 		"-tags", strings.Join(tags, ","),
-		"-exclude-tags", strings.Join(cfg.ExcludeTags, ","),
-		"-rate-limit", strconv.Itoa(cfg.RateLimit),
+		"-exclude-tags", strings.Join(profile.ExcludeTags, ","),
+		"-rate-limit", strconv.Itoa(profile.RateLimit),
 		"-jsonl-export", exportPath,
 		"-disable-update-check",
 		"-no-interactsh", // OAST を無効化しローカル対象で決定的に走らせる
