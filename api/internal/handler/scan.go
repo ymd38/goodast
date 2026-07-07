@@ -96,6 +96,9 @@ func (h *ScanHandler) writeScanError(c *gin.Context, err error) {
 		// 所有確認前のスキャンは安全ガードレールとして禁止（ADR-0004）。
 		// /sites/:id/verify を通せば解消できるため、恒久拒否ではなく前提条件不足の 403。
 		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+	case errors.Is(err, scan.ErrScanInProgress):
+		// 同一サイトで実行中のスキャンが既にある。完了後に再実行できるため 409 Conflict。
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 	case errors.Is(err, jobs.ErrInvalidPreset):
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	default:

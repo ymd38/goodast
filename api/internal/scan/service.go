@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/riverqueue/river"
@@ -23,7 +24,12 @@ var (
 	ErrSiteNotFound = errors.New("scan: site not found")
 	// ErrOwnershipNotVerified は所有確認が未完了のためスキャンを実行できない（ADR-0004）。
 	ErrOwnershipNotVerified = errors.New("scan: site ownership not verified")
+	// ErrScanInProgress は同一サイトで実行中（queued / running）のスキャンが既にある。
+	ErrScanInProgress = errors.New("scan: a scan is already in progress for this site")
 )
+
+// uniqueViolation は PostgreSQL の一意制約違反コード（部分ユニークインデックス scans_one_active_per_site）。
+const uniqueViolation = "23505"
 
 // Service はスキャンジョブの受付を行う。
 type Service struct {
@@ -76,6 +82,11 @@ func (s *Service) EnqueueScan(ctx context.Context, siteID uuid.UUID, preset jobs
 		Preset: string(p),
 	})
 	if err != nil {
+		// 部分ユニークインデックス scans_one_active_per_site 違反 = 同一サイトで実行中のスキャンが既にある。
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == uniqueViolation {
+			return uuid.Nil, ErrScanInProgress
+		}
 		return uuid.Nil, fmt.Errorf("create scan: %w", err)
 	}
 

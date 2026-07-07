@@ -107,6 +107,26 @@ func TestScanHandlerFlow(t *testing.T) {
 		}
 	})
 
+	t.Run("concurrent scan on same site: 409", func(t *testing.T) {
+		siteID := insertScanTestSite(t, pool, "https://example.com", true)
+		// 1本目は受理（queued）。
+		if code, _ := doJSON(t, r, http.MethodPost, "/scans", `{"site_id":"`+siteID.String()+`"}`); code != http.StatusAccepted {
+			t.Fatalf("first scan: code=%d want 202", code)
+		}
+		// 2本目は実行中（queued）が居るため 409 Conflict。
+		if code, _ := doJSON(t, r, http.MethodPost, "/scans", `{"site_id":"`+siteID.String()+`"}`); code != http.StatusConflict {
+			t.Errorf("concurrent scan: code=%d want 409", code)
+		}
+		// 完了扱いにすると再度受理される（done は active でないため）。
+		if _, err := pool.Exec(ctx, `UPDATE scans SET status = 'done' WHERE site_id = $1`,
+			siteID.String()); err != nil {
+			t.Fatalf("mark done: %v", err)
+		}
+		if code, _ := doJSON(t, r, http.MethodPost, "/scans", `{"site_id":"`+siteID.String()+`"}`); code != http.StatusAccepted {
+			t.Errorf("re-scan after done: code=%d want 202", code)
+		}
+	})
+
 	t.Run("missing site: 404", func(t *testing.T) {
 		if code, _ := doJSON(t, r, http.MethodPost, "/scans", `{"site_id":"`+uuid.NewString()+`"}`); code != http.StatusNotFound {
 			t.Errorf("missing site: code=%d want 404", code)
