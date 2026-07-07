@@ -39,7 +39,7 @@ const needsGuide = computed(() => site.value && !site.value.ownership_verified &
 </script>
 
 <template>
-  <section class="mx-auto max-w-xl">
+  <section class="mx-auto max-w-3xl">
     <h1 class="font-display text-display-sm font-bold uppercase text-on-dark">サイトを登録</h1>
 
     <SiteRegisterForm v-if="!site" class="mt-8" :submitting="submitting" :error="registerError" @submit="register" />
