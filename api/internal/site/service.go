@@ -85,6 +85,11 @@ func (s *Service) Register(ctx context.Context, p RegisterParams) (Site, error) 
 		return Site{}, fmt.Errorf("create site: %w", err)
 	}
 	s.logger.Info("site registered", "site_id", site.ID, "ownership_required", required)
+	if !required {
+		// ローカル対象（localhost 等・ADR-0004）は確認不要。設計意図「確認スキップ即 verified」に合わせ、
+		// 登録時点で ownership_verified を立てる（UI が別途 POST /verify を呼ばずにスキャンへ進めるように）。
+		return s.repo.MarkVerified(ctx, site.ID)
+	}
 	return site, nil
 }
 

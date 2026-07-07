@@ -117,6 +117,10 @@ func TestSiteHandlerFlow(t *testing.T) {
 	if _, ok := lbody["verify_token"]; ok {
 		t.Error("local site should not carry a verify_token")
 	}
+	// ローカルは確認不要のため登録時点で verified（ADR-0004・設計意図「確認スキップ即 verified」）。
+	if lbody["ownership_verified"] != true {
+		t.Errorf("local site should be verified on register: %v", lbody["ownership_verified"])
+	}
 	localID, _ := lbody["id"].(string)
 
 	// バリデーション: 不正 base_url は 400（gin バインディング）。
