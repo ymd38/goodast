@@ -45,6 +45,14 @@ db-down: ## PostgreSQL を停止する
 db-shell: ## PostgreSQL に psql で接続する（コンテナ内の環境変数を使用）
 	docker compose exec db sh -c 'psql -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"'
 
+.PHONY: db-clean
+db-clean: ## 開発DBのアプリデータ（sites/scans/findings/認証情報/ジョブ）を全削除する（スキーマ・マイグレーションは保持）
+	@echo "⚠️  DB のアプリデータを全削除します（sites / scan_credentials / scans / findings / river_job）"
+	docker compose exec -T db sh -c 'psql -U "$$POSTGRES_USER" -d "$$POSTGRES_DB" -v ON_ERROR_STOP=1 \
+		-c "TRUNCATE sites, scan_credentials, scans, findings RESTART IDENTITY CASCADE;" \
+		-c "TRUNCATE river_job;"'
+	@echo "✅ クリーニング完了（スキーマは保持。再スキャンは make dev-worker が動いていれば即受付可能）"
+
 .PHONY: migrate
 migrate: ## マイグレーションを適用する（up）
 	$(MIGRATE) -path migrations -database "$(DATABASE_URL)" up
