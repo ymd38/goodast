@@ -59,6 +59,7 @@ type startScanResponse struct {
 // @Failure      400      {object}  handler.ErrorResponse
 // @Failure      403      {object}  handler.ErrorResponse
 // @Failure      404      {object}  handler.ErrorResponse
+// @Failure      409      {object}  handler.ErrorResponse
 // @Failure      500      {object}  handler.ErrorResponse
 // @Router       /scans [post]
 func (h *ScanHandler) start(c *gin.Context) {
