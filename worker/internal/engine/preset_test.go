@@ -18,25 +18,25 @@ func TestPlanFor(t *testing.T) {
 			"light",
 			jobs.PresetLight,
 			[]string{"misconfig", "tech", "exposure"},
-			5 * time.Minute,
+			15 * time.Minute,
 		},
 		{
 			"standard",
 			jobs.PresetStandard,
 			[]string{"misconfig", "tech", "exposure", "exposed-panels", "default-login", "cve"},
-			15 * time.Minute,
+			30 * time.Minute,
 		},
 		{
 			"deep",
 			jobs.PresetDeep,
 			[]string{"misconfig", "tech", "exposure", "exposed-panels", "default-login", "cve", "xss", "sqli", "lfi", "ssrf", "rce", "takeover"},
-			30 * time.Minute,
+			60 * time.Minute,
 		},
 		{
 			"unknown falls back to standard",
 			jobs.Preset("bogus"),
 			[]string{"misconfig", "tech", "exposure", "exposed-panels", "default-login", "cve"},
-			15 * time.Minute,
+			30 * time.Minute,
 		},
 	}
 	for _, tt := range tests {
@@ -58,6 +58,22 @@ func TestPlanFor(t *testing.T) {
 				t.Fatalf("severities = %q", plan.Scan.Severities)
 			}
 		})
+	}
+}
+
+func TestScanProfileForLocalTarget(t *testing.T) {
+	base := PlanFor(jobs.PresetLight).Scan
+	local := base.ForLocalTarget()
+	if local.RateLimit != localRateLimit {
+		t.Fatalf("local rate = %d, want %d", local.RateLimit, localRateLimit)
+	}
+	// 外部向けの保守的レートは元のまま（複製が変わっても base は不変）。
+	if base.RateLimit != 10 {
+		t.Fatalf("base rate mutated = %d, want 10", base.RateLimit)
+	}
+	// レート以外（タグ・除外・期間）は据え置き。
+	if !equalStrings(local.Tags, base.Tags) || !equalStrings(local.ExcludeTags, base.ExcludeTags) || local.RatePeriod != base.RatePeriod {
+		t.Fatalf("ForLocalTarget changed more than rate: %+v", local)
 	}
 }
 

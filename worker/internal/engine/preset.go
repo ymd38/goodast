@@ -31,17 +31,29 @@ var excludeDestructive = []string{"dos", "intrusive"}
 func PlanFor(p jobs.Preset) Plan {
 	switch p {
 	case jobs.PresetLight:
-		return plan([]string{"misconfig", "tech", "exposure"}, 5*time.Minute)
+		return plan([]string{"misconfig", "tech", "exposure"}, 15*time.Minute)
 	case jobs.PresetDeep:
 		return plan([]string{
 			"misconfig", "tech", "exposure", "exposed-panels", "default-login", "cve",
 			"xss", "sqli", "lfi", "ssrf", "rce", "takeover",
-		}, 30*time.Minute)
+		}, 60*time.Minute)
 	default: // standard を既定に
 		return plan([]string{
 			"misconfig", "tech", "exposure", "exposed-panels", "default-login", "cve",
-		}, 15*time.Minute)
+		}, 30*time.Minute)
 	}
+}
+
+// localRateLimit はローカル/自己所有対象に用いる緩めのレート（req/RatePeriod）。
+// 外部対象には CLAUDE.md の Critical Constraint「保守的なデフォルトレート」を維持し、
+// localhost 等（ADR-0004 のスキップ対象）に限って ForLocalTarget で引き上げる。
+const localRateLimit = 100
+
+// ForLocalTarget はローカル対象向けにレートを引き上げた複製を返す（純粋関数）。
+// タグ・タイムアウト等は変えない。呼び出し側（worker）が scope のローカル判定で適用する。
+func (p ScanProfile) ForLocalTarget() ScanProfile {
+	p.RateLimit = localRateLimit
+	return p
 }
 
 // plan は共通のレート・除外タグを載せた Plan を組み立てる（DRY）。

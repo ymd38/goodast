@@ -126,6 +126,12 @@ func (w *Worker) runScan(ctx context.Context, scanID uuid.UUID, pgID pgtype.UUID
 		return w.markFailed(ctx, scanID, pgID)
 	}
 
+	// ローカル/自己所有対象（所有確認スキップ対象）はレートを引き上げて現実的な時間で完了させる。
+	// 外部対象は保守的レート（Critical Constraint）を維持する。
+	if !scope.RequiresOwnershipVerification() {
+		profile = profile.ForLocalTarget()
+	}
+
 	// 実行前に必ず既存 findings を掃除する（再試行・途中失敗でも stale findings を残さない・#5）。
 	// 認証情報ロードより前に行い、復号失敗で failed 確定する場合も古い結果が残らないようにする。
 	if err := w.queries.DeleteFindingsByScan(ctx, pgID); err != nil {
