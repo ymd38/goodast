@@ -10,15 +10,20 @@ const starting = ref(false)
 const startError = ref<string | null>(null)
 
 async function start() {
+  // :disabled="starting" が連打を防ぐ。開始後は starting を保持したまま遷移し、二重開始を防ぐ。
   starting.value = true
   startError.value = null
-  const { data, error } = await client.POST('/scans', { body: { site_id: siteId, preset: preset.value } })
-  starting.value = false
+  const { data, error, response } = await client.POST('/scans', { body: { site_id: siteId, preset: preset.value } })
   // scan_id は生成型上 optional。欠落 202 は契約違反として /scans/undefined へ遷移させずエラー表示に落とす
   if (error || !data?.scan_id) {
-    startError.value = toApiErrorMessage(error)
+    starting.value = false
+    // 409 = 同一サイトで実行中のスキャンが既にある（backend の同時実行拒否）
+    startError.value = response?.status === 409
+      ? 'このサイトは既にスキャンを実行中です。完了までお待ちください。'
+      : toApiErrorMessage(error)
     return
   }
+  // 成功時は starting を保持したまま結果ページへ遷移する（遷移中のボタン再活性化＝二重開始を防ぐ）
   await navigateTo(`/scans/${data.scan_id}`)
 }
 </script>

@@ -47,6 +47,25 @@ describe('pages/sites/[id]/scan', () => {
     expect(w.text()).toContain('APIとの通信に失敗しました')
   })
 
+  it('409 は「既にスキャン実行中」のメッセージを表示し遷移しない', async () => {
+    postMock.mockResolvedValueOnce({ data: undefined, error: { error: 'in progress' }, response: { status: 409 } })
+    const w = await mountSuspended(ScanWizard, { route: ROUTE })
+    await w.find('[data-testid="start-scan"]').trigger('click')
+    await new Promise((r) => setTimeout(r))
+    expect(navigateMock).not.toHaveBeenCalled()
+    expect(w.text()).toContain('既にスキャンを実行中')
+  })
+
+  it('開始成功後はボタンを無効のまま保持し二重開始を防ぐ', async () => {
+    postMock.mockResolvedValueOnce({ data: { scan_id: 'scan-1', status: 'queued', preset: 'standard' }, error: undefined })
+    const w = await mountSuspended(ScanWizard, { route: ROUTE })
+    await w.find('[data-testid="start-scan"]').trigger('click')
+    await new Promise((r) => setTimeout(r))
+    expect(navigateMock).toHaveBeenCalledWith('/scans/scan-1')
+    // 成功時は starting を false に戻さないため、遷移完了までボタンは無効のまま
+    expect(w.find('[data-testid="start-scan"]').attributes('disabled')).toBeDefined()
+  })
+
   it('プリセットを変更すると選択した preset で開始する', async () => {
     postMock.mockResolvedValueOnce({ data: { scan_id: 'scan-1', status: 'queued', preset: 'deep' }, error: undefined })
     const w = await mountSuspended(ScanWizard, { route: ROUTE })
