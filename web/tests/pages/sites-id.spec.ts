@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mountSuspended, mockNuxtImport } from '@nuxt/test-utils/runtime'
 import type { DashboardData, Site } from '~/types/goodast'
-import SiteDashboardPage from '~/pages/sites/[id].vue'
+import SiteDashboardPage from '~/pages/sites/[id]/index.vue'
 import ScoreCard from '~/components/dashboard/ScoreCard.vue'
 import SeverityCountCards from '~/components/dashboard/SeverityCountCards.vue'
 import ScoreTrendChart from '~/components/dashboard/ScoreTrendChart.vue'
