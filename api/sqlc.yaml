@@ -8,6 +8,7 @@ sql:
       - "../migrations/000004_sites_verify_consistency.up.sql"
       - "../migrations/000005_scan_credentials_unique_site.up.sql"
       - "../migrations/000006_scans_preset.up.sql"
+      - "../migrations/000007_scans_one_active_per_site.up.sql"
     queries: "internal/db/queries"
     gen:
       go:

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mountSuspended, mockNuxtImport } from '@nuxt/test-utils/runtime'
 import type { DashboardData, Site } from '~/types/goodast'
-import SiteDashboardPage from '~/pages/sites/[id].vue'
+import SiteDashboardPage from '~/pages/sites/[id]/index.vue'
 import ScoreCard from '~/components/dashboard/ScoreCard.vue'
 import SeverityCountCards from '~/components/dashboard/SeverityCountCards.vue'
 import ScoreTrendChart from '~/components/dashboard/ScoreTrendChart.vue'
@@ -25,7 +25,12 @@ mockNuxtImport('useApiClient', () => () => ({ GET: getMock }))
 const SITE_ID = '11111111-1111-1111-1111-111111111111'
 const ROUTE = `/sites/${SITE_ID}`
 
-const site: Site = { id: SITE_ID, name: 'コーポレートサイト', base_url: 'https://example.com' }
+const site: Site = { id: SITE_ID, name: 'コーポレートサイト', base_url: 'https://example.com', ownership_verified: true }
+
+function mountSiteId(overrides: { ownership_verified: boolean }) {
+  mockApi({ site: { ...site, ownership_verified: overrides.ownership_verified } })
+  return mountSuspended(SiteDashboardPage, { route: ROUTE })
+}
 
 const dashboard: DashboardData = {
   latest: {
@@ -97,5 +102,18 @@ describe('pages/sites/[id]', () => {
     const wrapper = await mountSuspended(SiteDashboardPage, { route: ROUTE })
     expect(wrapper.text()).toContain('読み込み中')
     expect(wrapper.findComponent(ScoreCard).exists()).toBe(false)
+  })
+
+  it('verified サイトはスキャン開始導線を表示する', async () => {
+    const wrapper = await mountSiteId({ ownership_verified: true })
+    const link = wrapper.find('[data-testid="new-scan"]')
+    expect(link.exists()).toBe(true)
+    expect(link.attributes('href')).toBe(`/sites/${SITE_ID}/scan`)
+  })
+
+  it('未確認サイトはバナーを表示しスキャン導線を出さない', async () => {
+    const wrapper = await mountSiteId({ ownership_verified: false })
+    expect(wrapper.text()).toContain('所有確認が未完了')
+    expect(wrapper.find('[data-testid="new-scan"]').exists()).toBe(false)
   })
 })

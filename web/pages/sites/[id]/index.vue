@@ -31,10 +31,23 @@ const history = computed(() => data.value?.dashboard?.history ?? [])
     <NuxtLink to="/" class="text-caption uppercase tracking-caption text-muted hover:text-on-dark">
       ← Sites
     </NuxtLink>
-    <h1 class="mt-2 font-display text-display-sm font-bold uppercase text-on-dark">
-      {{ site.name }}
-    </h1>
+    <div class="mt-2 flex items-center justify-between">
+      <h1 class="font-display text-display-sm font-bold uppercase text-on-dark">
+        {{ site.name }}
+      </h1>
+      <NuxtLink
+        v-if="site.ownership_verified"
+        :to="`/sites/${siteId}/scan`"
+        data-testid="new-scan"
+        class="border border-on-dark px-4 py-2 font-display text-label font-bold uppercase tracking-label text-on-dark"
+      >
+        新規スキャン
+      </NuxtLink>
+    </div>
     <p class="mt-1 text-body-sm text-muted">{{ site.base_url }}</p>
+    <p v-if="!site.ownership_verified" class="mt-4 border border-warning p-4 text-body-sm text-warning">
+      所有確認が未完了のためスキャンを実行できません。登録画面から確認を完了してください。
+    </p>
     <div class="m-stripe mt-4" />
 
     <!-- 上段: 状態（今どうか） -->

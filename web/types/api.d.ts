@@ -15,7 +15,7 @@ export interface paths {
         put?: never;
         /**
          * スキャンを開始
-         * @description site_id のスキャンを enqueue する（worker が非同期実行）。所有確認前は 403。202 で scan_id/status=queued を返す。
+         * @description site_id のスキャンを enqueue する（worker が非同期実行）。所有確認前は 403。202 で scan_id/status=queued を返す。preset（light/standard/deep・省略時 standard）を任意で受け付ける。
          */
         post: {
             parameters: {
@@ -60,6 +60,15 @@ export interface paths {
                 };
                 /** @description Not Found */
                 404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_handler.ErrorResponse"];
+                    };
+                };
+                /** @description Conflict */
+                409: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -861,9 +870,12 @@ export interface components {
             verify_token?: string;
         };
         "internal_handler.startScanRequest": {
+            /** @description 省略可。空なら standard（jobs.ParsePreset）。 */
+            preset?: string;
             site_id: string;
         };
         "internal_handler.startScanResponse": {
+            preset?: string;
             scan_id?: string;
             status?: string;
         };

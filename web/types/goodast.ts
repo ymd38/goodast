@@ -11,3 +11,7 @@ export type HistoryEntry = Schemas['github_com_ymd38_goodast_api_internal_report
 export type LatestState = Schemas['github_com_ymd38_goodast_api_internal_report.LatestState']
 export type SeverityCounts = Schemas['github_com_ymd38_goodast_api_internal_report.SeverityCounts']
 export type Band = Schemas['github_com_ymd38_goodast_api_internal_report.Band']
+export type SiteResponse = Schemas['internal_handler.siteResponse']
+export type ScanState = Schemas['github_com_ymd38_goodast_api_internal_report.ScanState']
+export type ScanSummary = Schemas['github_com_ymd38_goodast_api_internal_report.ScanSummary']
+export type Finding = Schemas['github_com_ymd38_goodast_api_internal_report.Finding']
