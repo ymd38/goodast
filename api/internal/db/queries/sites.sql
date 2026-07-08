@@ -1,6 +1,6 @@
 -- name: CreateSite :one
-INSERT INTO sites (name, base_url, verify_method, verify_token)
-VALUES ($1, $2, $3, $4)
+INSERT INTO sites (name, base_url, verify_method, verify_token, ownership_verified)
+VALUES ($1, $2, $3, $4, $5)
 RETURNING *;
 
 -- name: GetSiteByID :one

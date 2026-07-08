@@ -65,7 +65,10 @@ func (s *Service) Register(ctx context.Context, p RegisterParams) (Site, error) 
 		return Site{}, fmt.Errorf("%w: %v", ErrInvalidBaseURL, err)
 	}
 
-	cp := CreateParams{Name: p.Name, BaseURL: p.BaseURL}
+	// ローカル対象（localhost 等・ADR-0004）は確認不要。設計意図「確認スキップ即 verified」に合わせ、
+	// INSERT の時点で ownership_verified を立てる（UI が別途 POST /verify を呼ばずにスキャンへ進める）。
+	// INSERT 1回で確定させ、Create 成功後に別途 MarkVerified する2回書き込み（部分登録状態）を避ける。
+	cp := CreateParams{Name: p.Name, BaseURL: p.BaseURL, Verified: !required}
 	if required {
 		tok, err := NewVerifyToken()
 		if err != nil {
