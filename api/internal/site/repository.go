@@ -21,20 +21,24 @@ func NewRepository(q *db.Queries) *Repository {
 }
 
 // CreateParams はサイト作成の入力。Method / Token はローカル対象では nil。
+// Verified はローカル対象（確認不要）を登録時点で verified にするため INSERT で立てる
+// （INSERT と MarkVerified の2回書き込みによる部分登録状態を避ける）。
 type CreateParams struct {
-	Name    string
-	BaseURL string
-	Method  *VerifyMethod
-	Token   *VerifyToken
+	Name     string
+	BaseURL  string
+	Method   *VerifyMethod
+	Token    *VerifyToken
+	Verified bool
 }
 
 // Create はサイトを作成して返す。
 func (r *Repository) Create(ctx context.Context, p CreateParams) (Site, error) {
 	row, err := r.q.CreateSite(ctx, db.CreateSiteParams{
-		Name:         p.Name,
-		BaseUrl:      p.BaseURL,
-		VerifyMethod: methodText(p.Method),
-		VerifyToken:  tokenText(p.Token),
+		Name:              p.Name,
+		BaseUrl:           p.BaseURL,
+		VerifyMethod:      methodText(p.Method),
+		VerifyToken:       tokenText(p.Token),
+		OwnershipVerified: p.Verified,
 	})
 	if err != nil {
 		return Site{}, err

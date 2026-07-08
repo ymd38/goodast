@@ -12,16 +12,17 @@ import (
 )
 
 const createSite = `-- name: CreateSite :one
-INSERT INTO sites (name, base_url, verify_method, verify_token)
-VALUES ($1, $2, $3, $4)
+INSERT INTO sites (name, base_url, verify_method, verify_token, ownership_verified)
+VALUES ($1, $2, $3, $4, $5)
 RETURNING id, name, base_url, ownership_verified, verify_method, verify_token, created_at
 `
 
 type CreateSiteParams struct {
-	Name         string      `json:"name"`
-	BaseUrl      string      `json:"base_url"`
-	VerifyMethod pgtype.Text `json:"verify_method"`
-	VerifyToken  pgtype.Text `json:"verify_token"`
+	Name              string      `json:"name"`
+	BaseUrl           string      `json:"base_url"`
+	VerifyMethod      pgtype.Text `json:"verify_method"`
+	VerifyToken       pgtype.Text `json:"verify_token"`
+	OwnershipVerified bool        `json:"ownership_verified"`
 }
 
 func (q *Queries) CreateSite(ctx context.Context, arg CreateSiteParams) (Site, error) {
@@ -30,6 +31,7 @@ func (q *Queries) CreateSite(ctx context.Context, arg CreateSiteParams) (Site, e
 		arg.BaseUrl,
 		arg.VerifyMethod,
 		arg.VerifyToken,
+		arg.OwnershipVerified,
 	)
 	var i Site
 	err := row.Scan(
