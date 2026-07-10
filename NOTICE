@@ -1,0 +1,47 @@
+goodast
+Copyright (c) 2026 Hirokazu Yamada
+
+This product is licensed under the MIT License (see LICENSE).
+
+------------------------------------------------------------------------
+Third-party components
+------------------------------------------------------------------------
+
+goodast is a wrapper around the Nuclei v3 Go SDK and other open source Go
+libraries. Binaries built from this repository statically link third-party
+packages that are distributed under their own licenses. The bulk of these are
+permissive (MIT / Apache-2.0 / BSD / ISC). The copyleft / weak-copyleft
+components are listed explicitly below for transparency and compliance.
+
+goodast itself is distributed as open source, so the source-availability
+obligations of the licenses below are satisfied by this repository.
+
+To regenerate a full, current inventory of every dependency and its license:
+
+    cd worker && go run github.com/google/go-licenses@v1.6.0 report ./...
+    cd api    && go run github.com/google/go-licenses@v1.6.0 report ./...
+
+--- GPL-2.0 ---
+
+The Nuclei SDK pulls in the following component transitively (used by Nuclei's
+LDAP protocol support). It is licensed under the GNU General Public License,
+version 2:
+
+  github.com/projectdiscovery/ldapserver
+
+--- MPL-2.0 (Mozilla Public License 2.0, weak copyleft) ---
+
+  github.com/cyphar/filepath-securejoin
+  github.com/go-sql-driver/mysql
+  github.com/gosimple/slug
+  github.com/hashicorp/go-cleanhttp
+  github.com/hashicorp/go-retryablehttp
+  github.com/hashicorp/go-uuid
+  github.com/hashicorp/go-version
+  github.com/hashicorp/golang-lru/v2
+  github.com/projectdiscovery/retryablehttp-go
+  github.com/riverqueue/river (and its riverdriver / rivershared / rivertype modules)
+
+Each listed package remains under its own license; its source is available at
+the corresponding module path. The full text of the GPL-2.0 and MPL-2.0
+licenses can be obtained from those upstream repositories.
