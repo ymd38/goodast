@@ -329,7 +329,9 @@ func TestScanWorkerTimeoutMarksFailedImmediately(t *testing.T) {
 	}
 	defer func() { _ = client.Stop(ctx) }()
 
-	siteID := seedSite(t, pool, "http://localhost:3000", false)
+	// engine はスタブ（timeoutEngine）でネットワークに接続しないため base_url は到達性不問。
+	// 開発サーバ（Nuxt 既定 :3000 等）と紛らわしいポートは避け、確認スキップ対象の *.local を使う。
+	siteID := seedSite(t, pool, "http://goodast-test.local", false)
 	scanID := seedScan(t, pool, siteID, "queued")
 	// MaxAttempts=3（enqueue 側の既定と同じ）で「最終試行ではない」状況を作り、
 	// タイムアウトが再試行に回らず即 failed になるパスを通す。
