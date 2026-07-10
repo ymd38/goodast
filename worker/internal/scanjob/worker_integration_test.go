@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -84,6 +85,16 @@ func (failingEngine) Version() string { return "fail/v0" }
 
 func (failingEngine) Scan(_ context.Context, _ engine.ScanRequest, _ engine.FindingCallback) error {
 	return errors.New("simulated engine failure")
+}
+
+// timeoutEngine はプリセットのタイムアウト超過（context.DeadlineExceeded）を模擬する
+// engine.Engine 実装（タイムアウト→即 failed 確定の検証用）。
+type timeoutEngine struct{}
+
+func (timeoutEngine) Version() string { return "timeout/v0" }
+
+func (timeoutEngine) Scan(_ context.Context, _ engine.ScanRequest, _ engine.FindingCallback) error {
+	return fmt.Errorf("simulated scan timeout: %w", context.DeadlineExceeded)
 }
 
 func countFindings(t *testing.T, pool *pgxpool.Pool, scanID string) int {
@@ -280,6 +291,76 @@ func TestScanWorkerEngineFailureMarksFailed(t *testing.T) {
 		t.Fatalf("enqueue: %v", err)
 	}
 	waitForStatus(t, pool, scanID, "failed")
+}
+
+// TestScanWorkerTimeoutMarksFailedImmediately は、エンジン実行がタイムアウト
+// （context.DeadlineExceeded）で失敗した場合、再試行枠が残っていても初回試行で
+// 即 failed に確定することを検証する（恒久エラー扱い・対象サイトを叩き続けない）。
+func TestScanWorkerTimeoutMarksFailedImmediately(t *testing.T) {
+	dbURL := os.Getenv("TEST_DATABASE_URL")
+	if dbURL == "" {
+		t.Skip("TEST_DATABASE_URL not set; skipping integration test")
+	}
+	ctx := context.Background()
+
+	pool, err := pgxpool.New(ctx, dbURL)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer pool.Close()
+
+	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
+	workers := river.NewWorkers()
+	river.AddWorker(workers, newTestWorker(pool, timeoutEngine{}, testCipher(t), quiet))
+	client, err := river.NewClient(riverpgxv5.New(pool), &river.Config{
+		Queues:  map[string]river.QueueConfig{river.QueueDefault: {MaxWorkers: 1}},
+		Workers: workers,
+		Logger:  quiet,
+	})
+	if err != nil {
+		t.Fatalf("client: %v", err)
+	}
+	insertOnly, err := river.NewClient(riverpgxv5.New(pool), &river.Config{Logger: quiet})
+	if err != nil {
+		t.Fatalf("insert-only client: %v", err)
+	}
+	if err := client.Start(ctx); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	defer func() { _ = client.Stop(ctx) }()
+
+	// engine はスタブ（timeoutEngine）でネットワークに接続しないため base_url は到達性不問。
+	// 開発サーバ（Nuxt 既定 :3000 等）と紛らわしいポートは避け、確認スキップ対象の *.local を使う。
+	siteID := seedSite(t, pool, "http://goodast-test.local", false)
+	scanID := seedScan(t, pool, siteID, "queued")
+	// MaxAttempts=3（enqueue 側の既定と同じ）で「最終試行ではない」状況を作り、
+	// タイムアウトが再試行に回らず即 failed になるパスを通す。
+	if _, err := insertOnly.Insert(ctx, jobs.ScanArgs{ScanID: scanID, Preset: jobs.PresetLight}, &river.InsertOpts{MaxAttempts: 3}); err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+	waitForStatus(t, pool, scanID, "failed")
+
+	// ジョブは初回試行のまま完了扱いになる（再試行にスケジュールされない）。
+	deadline := time.Now().Add(15 * time.Second)
+	for {
+		var state string
+		var attempt int
+		if err := pool.QueryRow(ctx,
+			`SELECT state, attempt FROM river_job WHERE kind = 'scan' AND args->>'scan_id' = $1`,
+			scanID).Scan(&state, &attempt); err != nil {
+			t.Fatalf("query river_job: %v", err)
+		}
+		if state == "completed" {
+			if attempt != 1 {
+				t.Errorf("river_job attempt = %d, want 1 (timeout must not retry)", attempt)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("river_job did not complete; last state=%q attempt=%d", state, attempt)
+		}
+		time.Sleep(150 * time.Millisecond)
+	}
 }
 
 // TestScanWorkerInjectsSessionHeaders は、session 認証情報が設定された scan で、復号済みの
