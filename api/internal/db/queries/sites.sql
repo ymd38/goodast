@@ -1,6 +1,6 @@
 -- name: CreateSite :one
-INSERT INTO sites (name, base_url, verify_method, verify_token, ownership_verified)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO sites (name, base_url, origin, verify_method, verify_token, ownership_verified)
+VALUES ($1, $2, $3, $4, $5, $6)
 RETURNING *;
 
 -- name: GetSiteByID :one
@@ -8,6 +8,9 @@ SELECT * FROM sites WHERE id = $1;
 
 -- name: GetSiteByName :one
 SELECT * FROM sites WHERE name = $1;
+
+-- name: GetSiteByOrigin :one
+SELECT * FROM sites WHERE origin = $1;
 
 -- name: ListSites :many
 SELECT * FROM sites ORDER BY created_at DESC;

@@ -49,4 +49,10 @@ type Site struct {
 	VerifyMethod      pgtype.Text        `json:"verify_method"`
 	VerifyToken       pgtype.Text        `json:"verify_token"`
 	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	Origin            string             `json:"origin"`
+}
+
+type SitesDedup struct {
+	ID     pgtype.UUID `json:"id"`
+	KeepID interface{} `json:"keep_id"`
 }

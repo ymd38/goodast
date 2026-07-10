@@ -19,6 +19,7 @@ type Querier interface {
 	GetScanCredentials(ctx context.Context, siteID pgtype.UUID) (GetScanCredentialsRow, error)
 	GetSiteByID(ctx context.Context, id pgtype.UUID) (Site, error)
 	GetSiteByName(ctx context.Context, name string) (Site, error)
+	GetSiteByOrigin(ctx context.Context, origin string) (Site, error)
 	// ダッシュボードのスコア時系列用。完了かつ summary_json を持つスキャンのみを
 	// 日付昇順（折れ線 左→右）で返す。スコアは呼び出し側（report）で summary から算出する。
 	// 並び順は report が点の日時に採用する finished_at（無ければ created_at）と一致させ、
