@@ -31,6 +31,11 @@ var (
 // uniqueViolation は PostgreSQL の一意制約違反コード（部分ユニークインデックス scans_one_active_per_site）。
 const uniqueViolation = "23505"
 
+// scanJobMaxAttempts はスキャンジョブの最大試行回数。river 既定の 25 のままだと
+// 失敗するスキャンが最大 25 回 × プリセットのタイムアウト時間だけ対象を叩き続けるため、
+// 一過性エラーの救済に必要な最小限（初回 + 再試行 2 回）に抑える。
+const scanJobMaxAttempts = 3
+
 // Service はスキャンジョブの受付を行う。
 type Service struct {
 	pool  *pgxpool.Pool
@@ -91,7 +96,8 @@ func (s *Service) EnqueueScan(ctx context.Context, siteID uuid.UUID, preset jobs
 	}
 
 	scanID := uuid.UUID(scan.ID.Bytes)
-	if _, err := s.river.InsertTx(ctx, tx, jobs.ScanArgs{ScanID: scanID.String(), Preset: p}, nil); err != nil {
+	opts := &river.InsertOpts{MaxAttempts: scanJobMaxAttempts}
+	if _, err := s.river.InsertTx(ctx, tx, jobs.ScanArgs{ScanID: scanID.String(), Preset: p}, opts); err != nil {
 		return uuid.Nil, fmt.Errorf("enqueue scan job: %w", err)
 	}
 

@@ -159,6 +159,14 @@ func (w *Worker) runScan(ctx context.Context, scanID uuid.UUID, pgID pgtype.UUID
 
 	findings, err := w.executeScan(ctx, pgID, scope, headers, profile)
 	if err != nil {
+		// プリセットのタイムアウト超過は、同じプリセットで再試行しても同じ時間で打ち切られる
+		// だけで解消しない恒久エラー。再試行枠を残していても即 failed に確定し、対象サイトを
+		// 無意味に叩き続けない。worker シャットダウン等の context.Canceled は一過性として
+		// 従来どおり再試行に委ねる。
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			w.logger.Error("scan timed out; marking failed", "scan_id", scanID, "err", err)
+			return w.markFailed(ctx, scanID, pgID)
+		}
 		if lastAttempt {
 			// 最終試行でも失敗: failed に確定する。状態更新に失敗したら error を返し再試行に回す。
 			w.logger.Error("scan failed on final attempt; marking failed", "scan_id", scanID, "err", err)
@@ -246,10 +254,19 @@ func permanentCredentialError(err error) bool {
 		errors.Is(err, secrets.ErrNoHeaders)
 }
 
+// failScanTimeout は failed 確定の DB 更新にかける上限。ジョブ ctx から切り離した
+// 短寿命 ctx に適用し、DB 障害時に無期限ブロックしないようにする。
+const failScanTimeout = 10 * time.Second
+
 // markFailed は scan を failed にし、ジョブを完了扱い（nil）にしてよいかを返す。
 // 既に終端状態（ErrNoRows）なら冪等に nil を返す。状態更新そのものに失敗した場合は
 // error を返し、scan が running のまま握り潰されないようにする（#7）。
 func (w *Worker) markFailed(ctx context.Context, scanID uuid.UUID, pgID pgtype.UUID) error {
+	// ジョブ ctx はプリセットタイムアウトで既に失効している場合がある。その ctx のまま
+	// FailScan すると DB 更新まで道連れに失敗し scan が running のまま残るため、
+	// キャンセルを引き継がない短寿命 ctx で確定させる。
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), failScanTimeout)
+	defer cancel()
 	if _, err := w.queries.FailScan(ctx, pgID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil // 既に終端状態。失敗確定済みとして扱う。

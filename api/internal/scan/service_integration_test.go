@@ -76,6 +76,17 @@ func TestEnqueueScan(t *testing.T) {
 		if jobCount != 1 {
 			t.Errorf("river_job count = %d, want 1", jobCount)
 		}
+		// river 既定の 25 回ではなく有界の再試行回数で積まれること（失敗スキャンが
+		// 対象サイトを叩き続けないためのガードレール）。
+		var maxAttempts int
+		if err := pool.QueryRow(ctx,
+			`SELECT max_attempts FROM river_job WHERE kind = 'scan' AND args->>'scan_id' = $1`,
+			scanID.String()).Scan(&maxAttempts); err != nil {
+			t.Fatalf("query river_job max_attempts: %v", err)
+		}
+		if maxAttempts != 3 {
+			t.Errorf("river_job max_attempts = %d, want 3", maxAttempts)
+		}
 	})
 
 	t.Run("unverified public site: rejected, nothing persisted", func(t *testing.T) {
