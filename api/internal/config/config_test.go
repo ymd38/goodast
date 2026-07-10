@@ -13,7 +13,7 @@ func applyEnv(t *testing.T, env map[string]string) {
 	t.Helper()
 	keys := []string{
 		"DATABASE_URL", "GOODAST_ENCRYPTION_KEY", "API_ADDR", "LOG_LEVEL",
-		"SHUTDOWN_TIMEOUT", "DB_MAX_CONNS", "DB_MIN_CONNS",
+		"SHUTDOWN_TIMEOUT", "DB_MAX_CONNS", "DB_MIN_CONNS", "GOODAST_SELF_ORIGINS",
 	}
 	for _, k := range keys {
 		t.Setenv(k, env[k])
@@ -56,8 +56,26 @@ func TestLoad(t *testing.T) {
 				if c.EncryptionKey != validKey {
 					t.Errorf("EncryptionKey = %q, want %q", c.EncryptionKey, validKey)
 				}
+				// 既定 self origins（web :3000 / api :8080）が登録される。
+				if !c.SelfOrigins.Blocks("localhost:3000") || !c.SelfOrigins.Blocks("localhost:8080") {
+					t.Errorf("default SelfOrigins missing web/api origins: %v", c.SelfOrigins)
+				}
 			},
 		},
+		{
+			name: "custom GOODAST_SELF_ORIGINS overrides default",
+			env:  base(map[string]string{"GOODAST_SELF_ORIGINS": "127.0.0.1:4000"}),
+			check: func(t *testing.T, c *Config) {
+				// 127.0.0.1 は localhost に畳み込まれ、既定 :3000/:8080 は上書きで消える。
+				if !c.SelfOrigins.Blocks("localhost:4000") {
+					t.Errorf("SelfOrigins missing localhost:4000: %v", c.SelfOrigins)
+				}
+				if c.SelfOrigins.Blocks("localhost:3000") {
+					t.Errorf("SelfOrigins should not retain default when overridden: %v", c.SelfOrigins)
+				}
+			},
+		},
+		{name: "invalid GOODAST_SELF_ORIGINS", env: base(map[string]string{"GOODAST_SELF_ORIGINS": "no-port"}), wantErr: true},
 		{
 			name: "full custom values",
 			env: base(map[string]string{

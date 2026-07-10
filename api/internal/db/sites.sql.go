@@ -12,14 +12,15 @@ import (
 )
 
 const createSite = `-- name: CreateSite :one
-INSERT INTO sites (name, base_url, verify_method, verify_token, ownership_verified)
-VALUES ($1, $2, $3, $4, $5)
-RETURNING id, name, base_url, ownership_verified, verify_method, verify_token, created_at
+INSERT INTO sites (name, base_url, origin, verify_method, verify_token, ownership_verified)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, name, base_url, ownership_verified, verify_method, verify_token, created_at, origin
 `
 
 type CreateSiteParams struct {
 	Name              string      `json:"name"`
 	BaseUrl           string      `json:"base_url"`
+	Origin            string      `json:"origin"`
 	VerifyMethod      pgtype.Text `json:"verify_method"`
 	VerifyToken       pgtype.Text `json:"verify_token"`
 	OwnershipVerified bool        `json:"ownership_verified"`
@@ -29,6 +30,7 @@ func (q *Queries) CreateSite(ctx context.Context, arg CreateSiteParams) (Site, e
 	row := q.db.QueryRow(ctx, createSite,
 		arg.Name,
 		arg.BaseUrl,
+		arg.Origin,
 		arg.VerifyMethod,
 		arg.VerifyToken,
 		arg.OwnershipVerified,
@@ -42,12 +44,13 @@ func (q *Queries) CreateSite(ctx context.Context, arg CreateSiteParams) (Site, e
 		&i.VerifyMethod,
 		&i.VerifyToken,
 		&i.CreatedAt,
+		&i.Origin,
 	)
 	return i, err
 }
 
 const getSiteByID = `-- name: GetSiteByID :one
-SELECT id, name, base_url, ownership_verified, verify_method, verify_token, created_at FROM sites WHERE id = $1
+SELECT id, name, base_url, ownership_verified, verify_method, verify_token, created_at, origin FROM sites WHERE id = $1
 `
 
 func (q *Queries) GetSiteByID(ctx context.Context, id pgtype.UUID) (Site, error) {
@@ -61,12 +64,13 @@ func (q *Queries) GetSiteByID(ctx context.Context, id pgtype.UUID) (Site, error)
 		&i.VerifyMethod,
 		&i.VerifyToken,
 		&i.CreatedAt,
+		&i.Origin,
 	)
 	return i, err
 }
 
 const getSiteByName = `-- name: GetSiteByName :one
-SELECT id, name, base_url, ownership_verified, verify_method, verify_token, created_at FROM sites WHERE name = $1
+SELECT id, name, base_url, ownership_verified, verify_method, verify_token, created_at, origin FROM sites WHERE name = $1
 `
 
 func (q *Queries) GetSiteByName(ctx context.Context, name string) (Site, error) {
@@ -80,12 +84,33 @@ func (q *Queries) GetSiteByName(ctx context.Context, name string) (Site, error) 
 		&i.VerifyMethod,
 		&i.VerifyToken,
 		&i.CreatedAt,
+		&i.Origin,
+	)
+	return i, err
+}
+
+const getSiteByOrigin = `-- name: GetSiteByOrigin :one
+SELECT id, name, base_url, ownership_verified, verify_method, verify_token, created_at, origin FROM sites WHERE origin = $1
+`
+
+func (q *Queries) GetSiteByOrigin(ctx context.Context, origin string) (Site, error) {
+	row := q.db.QueryRow(ctx, getSiteByOrigin, origin)
+	var i Site
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.BaseUrl,
+		&i.OwnershipVerified,
+		&i.VerifyMethod,
+		&i.VerifyToken,
+		&i.CreatedAt,
+		&i.Origin,
 	)
 	return i, err
 }
 
 const listSites = `-- name: ListSites :many
-SELECT id, name, base_url, ownership_verified, verify_method, verify_token, created_at FROM sites ORDER BY created_at DESC
+SELECT id, name, base_url, ownership_verified, verify_method, verify_token, created_at, origin FROM sites ORDER BY created_at DESC
 `
 
 func (q *Queries) ListSites(ctx context.Context) ([]Site, error) {
@@ -105,6 +130,7 @@ func (q *Queries) ListSites(ctx context.Context) ([]Site, error) {
 			&i.VerifyMethod,
 			&i.VerifyToken,
 			&i.CreatedAt,
+			&i.Origin,
 		); err != nil {
 			return nil, err
 		}
@@ -120,7 +146,7 @@ const markSiteVerified = `-- name: MarkSiteVerified :one
 UPDATE sites
 SET ownership_verified = true
 WHERE id = $1
-RETURNING id, name, base_url, ownership_verified, verify_method, verify_token, created_at
+RETURNING id, name, base_url, ownership_verified, verify_method, verify_token, created_at, origin
 `
 
 func (q *Queries) MarkSiteVerified(ctx context.Context, id pgtype.UUID) (Site, error) {
@@ -134,6 +160,7 @@ func (q *Queries) MarkSiteVerified(ctx context.Context, id pgtype.UUID) (Site, e
 		&i.VerifyMethod,
 		&i.VerifyToken,
 		&i.CreatedAt,
+		&i.Origin,
 	)
 	return i, err
 }

@@ -21,11 +21,13 @@ func NewRepository(q *db.Queries) *Repository {
 }
 
 // CreateParams はサイト作成の入力。Method / Token はローカル対象では nil。
+// Origin は正規化済みの origin（ドメイン+ポート）で、一意制約の対象。
 // Verified はローカル対象（確認不要）を登録時点で verified にするため INSERT で立てる
 // （INSERT と MarkVerified の2回書き込みによる部分登録状態を避ける）。
 type CreateParams struct {
 	Name     string
 	BaseURL  string
+	Origin   string
 	Method   *VerifyMethod
 	Token    *VerifyToken
 	Verified bool
@@ -36,6 +38,7 @@ func (r *Repository) Create(ctx context.Context, p CreateParams) (Site, error) {
 	row, err := r.q.CreateSite(ctx, db.CreateSiteParams{
 		Name:              p.Name,
 		BaseUrl:           p.BaseURL,
+		Origin:            p.Origin,
 		VerifyMethod:      methodText(p.Method),
 		VerifyToken:       tokenText(p.Token),
 		OwnershipVerified: p.Verified,
@@ -49,6 +52,15 @@ func (r *Repository) Create(ctx context.Context, p CreateParams) (Site, error) {
 // GetByID は ID でサイトを取得する。
 func (r *Repository) GetByID(ctx context.Context, id uuid.UUID) (Site, error) {
 	row, err := r.q.GetSiteByID(ctx, pgUUID(id))
+	if err != nil {
+		return Site{}, err
+	}
+	return toDomain(row)
+}
+
+// GetByOrigin は正規化 origin でサイトを取得する。重複登録時に既存サイトを引くために使う。
+func (r *Repository) GetByOrigin(ctx context.Context, origin string) (Site, error) {
+	row, err := r.q.GetSiteByOrigin(ctx, origin)
 	if err != nil {
 		return Site{}, err
 	}

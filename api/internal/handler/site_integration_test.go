@@ -20,6 +20,7 @@ import (
 	"github.com/ymd38/goodast/api/internal/db"
 	"github.com/ymd38/goodast/api/internal/handler"
 	"github.com/ymd38/goodast/api/internal/site"
+	"github.com/ymd38/goodast/api/internal/target"
 )
 
 // toggleHTTP は所有確認ファイル取得を差し替える fake。status/body を切り替えて成功/失敗を制御する。
@@ -37,11 +38,15 @@ type nopDNS struct{}
 func (nopDNS) LookupTXT(context.Context, string) ([]string, error) { return nil, nil }
 
 func setupRouter(t *testing.T, pool *pgxpool.Pool, fh *toggleHTTP) *gin.Engine {
+	return setupRouterWithSelf(t, pool, fh, nil)
+}
+
+func setupRouterWithSelf(t *testing.T, pool *pgxpool.Pool, fh *toggleHTTP, self target.SelfOrigins) *gin.Engine {
 	t.Helper()
 	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
 	repo := site.NewRepository(db.New(pool))
 	verifier := site.NewVerifier(fh, nopDNS{})
-	svc := site.NewService(site.ServiceDeps{Repo: repo, Verifier: verifier, Logger: quiet})
+	svc := site.NewService(site.ServiceDeps{Repo: repo, Verifier: verifier, SelfOrigins: self, Logger: quiet})
 	h := handler.NewSiteHandler(handler.SiteHandlerDeps{Service: svc})
 
 	gin.SetMode(gin.TestMode)
@@ -179,5 +184,73 @@ func TestSiteHandlerFlow(t *testing.T) {
 	// 確認不正ID。
 	if code, _ := doJSON(t, r, http.MethodPost, "/sites/not-a-uuid/verify", ""); code != http.StatusBadRequest {
 		t.Errorf("verify bad id: code=%d want 400", code)
+	}
+}
+
+// TestSiteHandlerSelfScanForbidden は GOODAST 自身の origin（ドメイン+ポート）の登録が
+// 400 で拒否されること、ループバック別名（127.0.0.1）でも同じく拒否されることを検証する。
+func TestSiteHandlerSelfScanForbidden(t *testing.T) {
+	dbURL := os.Getenv("TEST_DATABASE_URL")
+	if dbURL == "" {
+		t.Skip("TEST_DATABASE_URL not set; skipping integration test")
+	}
+	pool, err := pgxpool.New(context.Background(), dbURL)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer pool.Close()
+
+	self, err := target.NewSelfOrigins([]string{"localhost:3000"})
+	if err != nil {
+		t.Fatalf("NewSelfOrigins: %v", err)
+	}
+	r := setupRouterWithSelf(t, pool, &toggleHTTP{status: http.StatusOK}, self)
+
+	for _, baseURL := range []string{"http://localhost:3000", "http://127.0.0.1:3000/path"} {
+		code, body := doJSON(t, r, http.MethodPost, "/sites",
+			`{"name":"self-`+uuid.NewString()+`","base_url":"`+baseURL+`"}`)
+		if code != http.StatusBadRequest {
+			t.Errorf("self origin %q: code=%d want 400 (body=%v)", baseURL, code, body)
+		}
+	}
+
+	// 別ポート（GOODAST 自身でない）は登録できる。
+	if code, _ := doJSON(t, r, http.MethodPost, "/sites",
+		`{"name":"ok-`+uuid.NewString()+`","base_url":"http://localhost:3001"}`); code != http.StatusCreated {
+		t.Errorf("non-self local origin: code=%d want 201", code)
+	}
+}
+
+// TestSiteHandlerDuplicateOrigin は同一 origin の重複登録が 409 + existing_site_id で
+// 拒否され、ポート補完・パス無視のうえ既存サイトへ誘導できることを検証する（履歴一元化）。
+func TestSiteHandlerDuplicateOrigin(t *testing.T) {
+	dbURL := os.Getenv("TEST_DATABASE_URL")
+	if dbURL == "" {
+		t.Skip("TEST_DATABASE_URL not set; skipping integration test")
+	}
+	pool, err := pgxpool.New(context.Background(), dbURL)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer pool.Close()
+
+	r := setupRouterWithSelf(t, pool, &toggleHTTP{status: http.StatusOK}, nil)
+
+	host := "dedup-" + uuid.NewString() + ".example.com"
+	code, body := doJSON(t, r, http.MethodPost, "/sites",
+		`{"name":"first-`+uuid.NewString()+`","base_url":"https://`+host+`"}`)
+	if code != http.StatusCreated {
+		t.Fatalf("first register: code=%d body=%v", code, body)
+	}
+	firstID, _ := body["id"].(string)
+
+	// 別名・別パスだが同一 origin（https 既定ポート 443・パス無視）→ 409 + 既存 ID。
+	code, dupBody := doJSON(t, r, http.MethodPost, "/sites",
+		`{"name":"second-`+uuid.NewString()+`","base_url":"https://`+host+`:443/dashboard"}`)
+	if code != http.StatusConflict {
+		t.Fatalf("duplicate origin: code=%d want 409 (body=%v)", code, dupBody)
+	}
+	if got, _ := dupBody["existing_site_id"].(string); got != firstID {
+		t.Errorf("existing_site_id = %q, want %q", got, firstID)
 	}
 }

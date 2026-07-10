@@ -112,7 +112,9 @@ func seedSite(t *testing.T, pool *pgxpool.Pool, baseURL string, verified bool) s
 	t.Helper()
 	var siteID string
 	if err := pool.QueryRow(context.Background(),
-		`INSERT INTO sites (name, base_url, ownership_verified) VALUES ($1, $2, $3) RETURNING id::text`,
+		// origin は worker の検証対象外（GetScanTarget は base_url を見る）。NOT NULL/UNIQUE を
+		// 満たすため行ごとに一意な synthetic 値を入れる。
+		`INSERT INTO sites (name, base_url, origin, ownership_verified) VALUES ($1, $2, 'itest-'||gen_random_uuid()::text, $3) RETURNING id::text`,
 		"itest-"+uuid.NewString(), baseURL, verified).Scan(&siteID); err != nil {
 		t.Fatalf("insert site: %v", err)
 	}

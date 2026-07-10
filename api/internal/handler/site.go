@@ -102,9 +102,17 @@ func (h *SiteHandler) register(c *gin.Context) {
 		Method:  parsedMethod,
 	})
 	if err != nil {
+		var originTaken *site.OriginTakenError
 		switch {
+		case errors.As(err, &originTaken):
+			// 同一 origin は既に登録済み。既存サイト ID を返し UI が誘導できるようにする（履歴一元化）。
+			c.JSON(http.StatusConflict, gin.H{"error": originTaken.Error(), "existing_site_id": originTaken.ExistingID.String()})
+		case errors.Is(err, site.ErrSiteOriginTaken):
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 		case errors.Is(err, site.ErrSiteNameTaken):
 			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		case errors.Is(err, site.ErrSelfScanForbidden):
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		case errors.Is(err, site.ErrInvalidBaseURL):
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		default:

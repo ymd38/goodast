@@ -30,6 +30,7 @@ import (
 	"github.com/ymd38/goodast/api/internal/report"
 	"github.com/ymd38/goodast/api/internal/scan"
 	"github.com/ymd38/goodast/api/internal/site"
+	"github.com/ymd38/goodast/api/internal/target"
 	"github.com/ymd38/goodast/secrets"
 )
 
@@ -59,6 +60,7 @@ func run() error {
 	c := dig.New()
 	providers := []any{
 		func() *config.Config { return cfg },
+		func(c *config.Config) target.SelfOrigins { return c.SelfOrigins },
 		func() *slog.Logger { return logger },
 		newPool,
 		func(pool *pgxpool.Pool) *db.Queries { return db.New(pool) },

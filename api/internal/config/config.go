@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/ymd38/goodast/api/internal/target"
 )
 
 // Config は API サーバの実行時設定。環境変数から Load で構築する。
@@ -20,6 +22,9 @@ type Config struct {
 	LogLevel        slog.Level
 	DBMaxConns      int32
 	DBMinConns      int32
+	// SelfOrigins は GOODAST 自身の origin（ドメイン+ポート）集合。ここに一致する
+	// 対象は自己スキャン防止のため登録を拒否する。
+	SelfOrigins target.SelfOrigins
 }
 
 const (
@@ -27,6 +32,9 @@ const (
 	defaultShutdownTimeout = 30 * time.Second
 	defaultDBMaxConns      = 10
 	defaultDBMinConns      = 2
+	// defaultSelfOrigins は GOODAST の web UI（:3000）と api（:8080）の既定 origin。
+	// ループバック別名（127.0.0.1 / ::1）は正規化で localhost に畳み込まれるため同時に覆う。
+	defaultSelfOrigins = "localhost:3000,localhost:8080"
 )
 
 // Load は環境変数から Config を構築し検証する。
@@ -74,6 +82,11 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("DB_MIN_CONNS (%d) must not exceed DB_MAX_CONNS (%d)", minConns, maxConns)
 	}
 
+	selfOrigins, err := target.NewSelfOrigins(strings.Split(getEnv("GOODAST_SELF_ORIGINS", defaultSelfOrigins), ","))
+	if err != nil {
+		return nil, fmt.Errorf("invalid GOODAST_SELF_ORIGINS: %w", err)
+	}
+
 	return &Config{
 		DatabaseURL:     dbURL,
 		EncryptionKey:   encKey,
@@ -82,6 +95,7 @@ func Load() (*Config, error) {
 		LogLevel:        level,
 		DBMaxConns:      maxConns,
 		DBMinConns:      minConns,
+		SelfOrigins:     selfOrigins,
 	}, nil
 }
 

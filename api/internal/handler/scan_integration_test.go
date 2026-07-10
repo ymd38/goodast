@@ -40,7 +40,9 @@ func insertScanTestSite(t *testing.T, pool *pgxpool.Pool, baseURL string, verifi
 	t.Helper()
 	var id string
 	if err := pool.QueryRow(context.Background(),
-		`INSERT INTO sites (name, base_url, ownership_verified) VALUES ($1, $2, $3) RETURNING id::text`,
+		// origin は本テストの検証対象外（scan 受付は base_url を見る）。NOT NULL/UNIQUE を
+		// 満たすため行ごとに一意な synthetic 値を入れる。
+		`INSERT INTO sites (name, base_url, origin, ownership_verified) VALUES ($1, $2, 'itest-'||gen_random_uuid()::text, $3) RETURNING id::text`,
 		"htest-"+uuid.NewString(), baseURL, verified).Scan(&id); err != nil {
 		t.Fatalf("insert site: %v", err)
 	}
