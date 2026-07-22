@@ -113,7 +113,7 @@ func (c *Crawler) Crawl(ctx context.Context, scope engine.Scope, plan engine.Cra
 	if err != nil {
 		return engine.CrawlResult{}, fmt.Errorf("katana options: %w", err)
 	}
-	defer crawlerOpts.Close()
+	defer func() { _ = crawlerOpts.Close() }()
 
 	cr, err = standard.New(crawlerOpts)
 	if err != nil {
