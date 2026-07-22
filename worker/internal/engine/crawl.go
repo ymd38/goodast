@@ -12,9 +12,9 @@ type CrawlPlan struct {
 
 // 動的タイムアウトの係数（spec §6.1・実測でチューニング可能）。
 const (
-	scanTimeoutBase    = 2 * time.Minute  // 単一 URL でも確保する下駄
-	scanTimeoutPerURL  = 10 * time.Second // 発見 URL 1 本あたりの追加枠
-	scanTimeoutFloor   = 2 * time.Minute
+	scanTimeoutBase   = 2 * time.Minute  // 単一 URL でも確保する下駄
+	scanTimeoutPerURL = 10 * time.Second // 発見 URL 1 本あたりの追加枠
+	scanTimeoutFloor  = 2 * time.Minute
 )
 
 // ScanTimeout は発見 URL 数から scan 段の実行枠を算出する。
