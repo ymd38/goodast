@@ -39,3 +39,14 @@ func ScanTimeout(numURLs int, ceiling time.Duration) time.Duration {
 	}
 	return d
 }
+
+// DangerousPathRegexes は危険パスセグメントを Katana の OutOfScope 正規表現として返す。
+// scope.go の dangerousPathSegments を唯一の正とし、セグメント境界（/ または末尾・クエリ）で
+// 区切る（`/administrator-guide` の admin 部分一致は弾く。IsDangerousPath と整合）。
+func DangerousPathRegexes() []string {
+	pats := make([]string, 0, len(dangerousPathSegments))
+	for _, seg := range dangerousPathSegments {
+		pats = append(pats, `(?i)/`+seg+`(/|$|\?)`)
+	}
+	return pats
+}

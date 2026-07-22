@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"regexp"
 	"testing"
 	"time"
 )
@@ -45,4 +46,31 @@ func TestTargetsOrBase(t *testing.T) {
 			t.Fatalf("got %v; want %v", got, in)
 		}
 	})
+}
+
+func TestDangerousPathRegexes(t *testing.T) {
+	pats := DangerousPathRegexes()
+	if len(pats) == 0 {
+		t.Fatal("regex が空")
+	}
+	matchAny := func(path string) bool {
+		for _, p := range pats {
+			if regexp.MustCompile(p).MatchString(path) {
+				return true
+			}
+		}
+		return false
+	}
+	blocked := []string{"/logout", "/user/delete", "/admin/panel", "/account/remove", "/DESTROY"}
+	for _, p := range blocked {
+		if !matchAny(p) {
+			t.Errorf("危険パス %q が regex に一致しない", p)
+		}
+	}
+	allowed := []string{"/", "/products", "/search?q=1", "/administrator-guide"}
+	for _, p := range allowed {
+		if matchAny(p) {
+			t.Errorf("非危険パス %q が誤って一致した", p)
+		}
+	}
 }

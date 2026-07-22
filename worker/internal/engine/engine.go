@@ -35,6 +35,22 @@ type ScanRequest struct {
 	Profile ScanProfile
 }
 
+// CrawlResult はクロール段の成果。URLs は GET 到達済み・スコープ内の対象（重複排除済み）。
+// FormCount は抽出した非 GET フォーム（アクション）の件数（今回は件数のみ・詳細永続化は次タスク）。
+type CrawlResult struct {
+	URLs      []string
+	FormCount int
+}
+
+// Crawler はクロールエンジンの抽象。実装は engine/discovery 配下に隔離する（Engine と同じ扱い）。
+// interface の主目的はテスト容易性（scanjob を実クロールなしで検証するため fake 差し替え可能にする）。
+type Crawler interface {
+	// Crawl は scope 起点から plan の上限内で GET 探索し、発見 URL とフォーム数を返す。
+	// headers は認証クロール用の "Name: Value"（ADR-0003・未認証時は空）。値はログしない。
+	Crawl(ctx context.Context, scope Scope, plan CrawlPlan, headers []string) (CrawlResult, error)
+	Version() string
+}
+
 // Engine はスキャンエンジンの抽象。
 //
 // ADR-0002 がインターフェース化を許容する唯一の箇所（フェーズ2で ZAP を第2実装として追加予定）。
