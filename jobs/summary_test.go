@@ -2,6 +2,7 @@ package jobs
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -35,5 +36,26 @@ func TestScanSummaryWireShapeIsNested(t *testing.T) {
 	}
 	if probe.Findings.Critical != 1 {
 		t.Fatalf("expected nested findings.critical=1, got %d", probe.Findings.Critical)
+	}
+}
+
+func TestScanSummaryDiscoveryOmitempty(t *testing.T) {
+	// クロール無効時は discovery キーを出さない（後方互換）。
+	raw, _ := json.Marshal(ScanSummary{Findings: SeverityCounts{Total: 1}})
+	if strings.Contains(string(raw), "discovery") {
+		t.Fatalf("discovery が omitempty で出ていない: %s", raw)
+	}
+	// クロール有効時は url_count / form_count を含む。
+	in := ScanSummary{
+		Findings:  SeverityCounts{Total: 2},
+		Discovery: &DiscoveryInfo{URLCount: 12, FormCount: 3},
+	}
+	raw2, _ := json.Marshal(in)
+	var out ScanSummary
+	if err := json.Unmarshal(raw2, &out); err != nil {
+		t.Fatal(err)
+	}
+	if out.Discovery == nil || out.Discovery.URLCount != 12 || out.Discovery.FormCount != 3 {
+		t.Fatalf("round-trip mismatch: %+v", out.Discovery)
 	}
 }
