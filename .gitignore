@@ -39,3 +39,6 @@ web/dist/
 .idea/
 .vscode/
 *.swp
+
+# ローカルルール（コミット禁止）
+CLAUDE.local.md
