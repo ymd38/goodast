@@ -169,7 +169,7 @@ require (
 	github.com/google/go-github v17.0.0+incompatible // indirect
 	github.com/google/go-github/v30 v30.1.0 // indirect
 	github.com/google/go-querystring v1.1.0 // indirect
-	github.com/google/pprof v0.0.0-20240727154555-813a5fbdbec8 // indirect
+	github.com/google/pprof v0.0.0-20250423184734-337e5dd93bb4 // indirect
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510 // indirect
 	github.com/gorilla/css v1.0.1 // indirect
 	github.com/gosimple/slug v1.15.0 // indirect
@@ -284,6 +284,7 @@ require (
 	github.com/projectdiscovery/hmap v0.0.101 // indirect
 	github.com/projectdiscovery/httpx v1.9.0 // indirect
 	github.com/projectdiscovery/interactsh v1.3.1 // indirect
+	github.com/projectdiscovery/katana v1.6.1 // indirect
 	github.com/projectdiscovery/ldapserver v1.0.2-0.20240219154113-dcc758ebc0cb // indirect
 	github.com/projectdiscovery/machineid v0.0.0-20250715113114-c77eb3567582 // indirect
 	github.com/projectdiscovery/mapcidr v1.1.97 // indirect
