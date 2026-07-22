@@ -17,10 +17,11 @@ type ScanProfile struct {
 }
 
 // Plan は preset から導出したスキャン実行計画。Scan はエンジンへ、Timeout は
-// river ジョブの実行上限（scanjob.Worker.Timeout）へ渡る。
+// river ジョブの実行上限（scanjob.Worker.Timeout）へ渡る。Crawl はクロール段の有界化。
 type Plan struct {
 	Scan    ScanProfile
 	Timeout time.Duration
+	Crawl   CrawlPlan
 }
 
 // 破壊的テンプレートは全 preset で除外（ADR / Critical Constraints）。
@@ -31,16 +32,17 @@ var excludeDestructive = []string{"dos", "intrusive"}
 func PlanFor(p jobs.Preset) Plan {
 	switch p {
 	case jobs.PresetLight:
-		return plan([]string{"misconfig", "tech", "exposure"}, 15*time.Minute)
+		return plan([]string{"misconfig", "tech", "exposure"}, 15*time.Minute,
+			CrawlPlan{Enabled: false})
 	case jobs.PresetDeep:
 		return plan([]string{
 			"misconfig", "tech", "exposure", "exposed-panels", "default-login", "cve",
 			"xss", "sqli", "lfi", "ssrf", "rce", "takeover",
-		}, 60*time.Minute)
+		}, 60*time.Minute, CrawlPlan{Enabled: true, MaxDepth: 3, MaxURLs: 200})
 	default: // standard を既定に
 		return plan([]string{
 			"misconfig", "tech", "exposure", "exposed-panels", "default-login", "cve",
-		}, 30*time.Minute)
+		}, 30*time.Minute, CrawlPlan{Enabled: true, MaxDepth: 2, MaxURLs: 50})
 	}
 }
 
@@ -57,7 +59,7 @@ func (p ScanProfile) ForLocalTarget() ScanProfile {
 }
 
 // plan は共通のレート・除外タグを載せた Plan を組み立てる（DRY）。
-func plan(tags []string, timeout time.Duration) Plan {
+func plan(tags []string, timeout time.Duration, crawl CrawlPlan) Plan {
 	return Plan{
 		Scan: ScanProfile{
 			Tags:        tags,
@@ -67,5 +69,6 @@ func plan(tags []string, timeout time.Duration) Plan {
 			RatePeriod:  time.Second,
 		},
 		Timeout: timeout,
+		Crawl:   crawl,
 	}
 }

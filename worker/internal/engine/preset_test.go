@@ -77,6 +77,30 @@ func TestScanProfileForLocalTarget(t *testing.T) {
 	}
 }
 
+func TestPlanForCrawlBounds(t *testing.T) {
+	tests := []struct {
+		name    string
+		preset  jobs.Preset
+		enabled bool
+		depth   int
+		maxURLs int
+	}{
+		{"light はクロール無効", jobs.PresetLight, false, 0, 0},
+		{"standard は浅いクロール", jobs.PresetStandard, true, 2, 50},
+		{"deep は広いクロール", jobs.PresetDeep, true, 3, 200},
+		{"未知は standard 既定", jobs.Preset("bogus"), true, 2, 50},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := PlanFor(tt.preset).Crawl
+			if got.Enabled != tt.enabled || got.MaxDepth != tt.depth || got.MaxURLs != tt.maxURLs {
+				t.Fatalf("Crawl = %+v; want {Enabled:%v MaxDepth:%d MaxURLs:%d}",
+					got, tt.enabled, tt.depth, tt.maxURLs)
+			}
+		})
+	}
+}
+
 func equalStrings(a, b []string) bool {
 	if len(a) != len(b) {
 		return false
