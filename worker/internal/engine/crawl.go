@@ -21,19 +21,15 @@ func TargetsOrBase(req ScanRequest) []string {
 
 // 動的タイムアウトの係数（spec §6.1・実測でチューニング可能）。
 const (
-	scanTimeoutBase   = 2 * time.Minute  // 単一 URL でも確保する下駄
+	scanTimeoutBase   = 2 * time.Minute  // 単一 URL でも確保する下駄。numURLs>=0 のため事実上の下限も兼ねる
 	scanTimeoutPerURL = 10 * time.Second // 発見 URL 1 本あたりの追加枠
-	scanTimeoutFloor  = 2 * time.Minute
 )
 
 // ScanTimeout は発見 URL 数から scan 段の実行枠を算出する。
-// base + numURLs×perURL を [floor, ceiling] にクランプする。ceiling は preset 別の絶対上限
-// （= PlanFor(preset).Timeout）で、river ジョブ Timeout と一致させる（spec §6.1）。
+// base + numURLs×perURL を ceiling で頭打ちにする。base が最小値（下限）を兼ねるため下限クランプは不要。
+// ceiling は preset 別の絶対上限（= PlanFor(preset).Timeout）で、river ジョブ Timeout と一致させる（spec §6.1）。
 func ScanTimeout(numURLs int, ceiling time.Duration) time.Duration {
 	d := scanTimeoutBase + time.Duration(numURLs)*scanTimeoutPerURL
-	if d < scanTimeoutFloor {
-		d = scanTimeoutFloor
-	}
 	if d > ceiling {
 		d = ceiling
 	}
