@@ -29,6 +29,7 @@ type Worker struct {
 	river.WorkerDefaults[jobs.ScanArgs]
 	queries *db.Queries
 	engine  engine.Engine
+	crawler engine.Crawler
 	cipher  *secrets.Cipher
 	logger  *slog.Logger
 }
@@ -38,13 +39,14 @@ type WorkerDeps struct {
 	dig.In
 	Queries *db.Queries
 	Engine  engine.Engine
+	Crawler engine.Crawler
 	Cipher  *secrets.Cipher
 	Logger  *slog.Logger
 }
 
 // NewWorker は scan ジョブワーカーを生成する。
 func NewWorker(d WorkerDeps) *Worker {
-	return &Worker{queries: d.Queries, engine: d.Engine, cipher: d.Cipher, logger: d.Logger}
+	return &Worker{queries: d.Queries, engine: d.Engine, crawler: d.Crawler, cipher: d.Cipher, logger: d.Logger}
 }
 
 // Timeout は scan ジョブ1回あたりの実行上限。preset ごとに engine.PlanFor が返す値を使う。
@@ -93,12 +95,12 @@ func (w *Worker) Work(ctx context.Context, job *river.Job[jobs.ScanArgs]) error 
 		w.logger.Error("invalid preset on scan job; marking failed", "scan_id", scanID, "preset", job.Args.Preset)
 		return w.markFailed(ctx, scanID, pgID)
 	}
-	profile := engine.PlanFor(preset).Scan
+	plan := engine.PlanFor(preset)
 
 	// 最終試行かを判定する。engine の一過性エラーは再試行に委ね、最後の試行でも
 	// 失敗した場合は failed に確定させて scan が running のまま残らないようにする（#4）。
 	lastAttempt := job.Attempt >= job.MaxAttempts
-	return w.runScan(ctx, scanID, pgID, profile, lastAttempt)
+	return w.runScan(ctx, scanID, pgID, plan, lastAttempt)
 }
 
 // runScan はスキャン対象をロードし、ガードレールを確認した上で engine スキャンを実行、
@@ -106,7 +108,7 @@ func (w *Worker) Work(ctx context.Context, job *river.Job[jobs.ScanArgs]) error 
 // 直らないため failed にする。engine の実行エラーは原則再試行に委ね、最終試行で失敗した
 // 場合のみ failed に確定する。状態更新（FailScan）に失敗した場合は error を返し、
 // scan が running のまま握り潰されないようにする（#7）。
-func (w *Worker) runScan(ctx context.Context, scanID uuid.UUID, pgID pgtype.UUID, profile engine.ScanProfile, lastAttempt bool) error {
+func (w *Worker) runScan(ctx context.Context, scanID uuid.UUID, pgID pgtype.UUID, plan engine.Plan, lastAttempt bool) error {
 	target, err := w.queries.GetScanTarget(ctx, pgID)
 	if err != nil {
 		return fmt.Errorf("get scan target %s: %w", scanID, err)
@@ -126,6 +128,7 @@ func (w *Worker) runScan(ctx context.Context, scanID uuid.UUID, pgID pgtype.UUID
 		return w.markFailed(ctx, scanID, pgID)
 	}
 
+	profile := plan.Scan
 	// ローカル/自己所有対象（所有確認スキップ対象）はレートを引き上げて現実的な時間で完了させる。
 	// 外部対象は保守的レート（Critical Constraint）を維持する。
 	if !scope.RequiresOwnershipVerification() {
@@ -157,13 +160,31 @@ func (w *Worker) runScan(ctx context.Context, scanID uuid.UUID, pgID pgtype.UUID
 		w.logger.Info("authenticated scan; injecting session headers", "scan_id", scanID, "header_count", len(headers))
 	}
 
-	findings, err := w.executeScan(ctx, pgID, scope, headers, profile)
+	// クロール段: 発見 URL 群を診断対象にする。失敗・0件は単一 URL フォールバック（診断は続行）。
+	targets := []string{scope.BaseURL()}
+	var discovery *jobs.DiscoveryInfo
+	if plan.Crawl.Enabled {
+		res, cerr := w.crawler.Crawl(ctx, scope, plan.Crawl, headers)
+		if cerr != nil {
+			w.logger.Warn("crawl failed; falling back to single URL", "scan_id", scanID, "err", cerr)
+		} else if len(res.URLs) > 0 {
+			targets = res.URLs
+			discovery = &jobs.DiscoveryInfo{URLCount: len(res.URLs), FormCount: res.FormCount}
+			w.logger.Info("crawl complete", "scan_id", scanID, "urls", len(res.URLs), "forms", res.FormCount)
+		}
+	}
+
+	// 動的タイムアウト: 発見 URL 数に応じ、preset CEILING（plan.Timeout）を上限に scan 段の枠を決める。
+	scanCtx, cancel := context.WithTimeout(ctx, engine.ScanTimeout(len(targets), plan.Timeout))
+	defer cancel()
+
+	findings, err := w.executeScan(scanCtx, pgID, scope, headers, profile, targets)
 	if err != nil {
 		// プリセットのタイムアウト超過は、同じプリセットで再試行しても同じ時間で打ち切られる
 		// だけで解消しない恒久エラー。再試行枠を残していても即 failed に確定し、対象サイトを
 		// 無意味に叩き続けない。worker シャットダウン等の context.Canceled は一過性として
 		// 従来どおり再試行に委ねる。
-		if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(scanCtx.Err(), context.DeadlineExceeded) {
 			w.logger.Error("scan timed out; marking failed", "scan_id", scanID, "err", err)
 			return w.markFailed(ctx, scanID, pgID)
 		}
@@ -176,7 +197,7 @@ func (w *Worker) runScan(ctx context.Context, scanID uuid.UUID, pgID pgtype.UUID
 		return fmt.Errorf("scan %s: %w", scanID, err)
 	}
 
-	payload, err := json.Marshal(jobs.ScanSummary{Findings: engine.Summarize(findings)})
+	payload, err := json.Marshal(jobs.ScanSummary{Findings: engine.Summarize(findings), Discovery: discovery})
 	if err != nil {
 		return fmt.Errorf("marshal summary %s: %w", scanID, err)
 	}
@@ -196,7 +217,7 @@ func (w *Worker) runScan(ctx context.Context, scanID uuid.UUID, pgID pgtype.UUID
 // executeScan は engine スキャンを実行し、検出ごとに finding を保存しつつ収集して返す。
 // onFinding は複数 goroutine から呼ばれ得るため mutex で直列化する（contract 準拠）。
 // 既存 findings の掃除（再実行の冪等化・#5）は呼び出し元 runScan が実行前に行う。
-func (w *Worker) executeScan(ctx context.Context, pgID pgtype.UUID, scope engine.Scope, headers []string, profile engine.ScanProfile) ([]engine.Finding, error) {
+func (w *Worker) executeScan(ctx context.Context, pgID pgtype.UUID, scope engine.Scope, headers []string, profile engine.ScanProfile, targets []string) ([]engine.Finding, error) {
 	var (
 		mu        sync.Mutex
 		collected []engine.Finding
@@ -215,7 +236,7 @@ func (w *Worker) executeScan(ctx context.Context, pgID pgtype.UUID, scope engine
 		collected = append(collected, f)
 	}
 
-	if err := w.engine.Scan(ctx, engine.ScanRequest{Scope: scope, Headers: headers, Profile: profile}, onFinding); err != nil {
+	if err := w.engine.Scan(ctx, engine.ScanRequest{Scope: scope, Targets: targets, Headers: headers, Profile: profile}, onFinding); err != nil {
 		return nil, err
 	}
 	if saveErr != nil {

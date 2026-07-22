@@ -23,6 +23,7 @@ import (
 	"github.com/ymd38/goodast/worker/internal/config"
 	"github.com/ymd38/goodast/worker/internal/db"
 	"github.com/ymd38/goodast/worker/internal/engine"
+	"github.com/ymd38/goodast/worker/internal/engine/discovery/katana"
 	"github.com/ymd38/goodast/worker/internal/engine/nuclei"
 	"github.com/ymd38/goodast/worker/internal/scanjob"
 	"github.com/ymd38/goodast/worker/internal/templates"
@@ -61,6 +62,8 @@ func run() error {
 		// engine.Engine の唯一の実装は Nuclei（ADR-0002）。実行パラメータは per-scan の
 		// ScanRequest.Profile から渡すため、配線時に Config は不要。
 		func() engine.Engine { return nuclei.New() },
+		// engine.Crawler の実装は Katana（standard engine・探索専用）。per-scan で状態を持たない。
+		func() engine.Crawler { return katana.New() },
 		newCipher,
 		scanjob.NewWorker,
 		newRiverClient,
