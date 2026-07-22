@@ -67,13 +67,14 @@ func (c *Crawler) Crawl(ctx context.Context, scope engine.Scope, plan engine.Cra
 	}
 
 	opts := &types.Options{
-		URLs:           []string{scope.BaseURL()},
-		MaxDepth:       plan.MaxDepth,
-		Strategy:       "depth-first", // katana CLI 既定。空文字だと queue.New が "unsupported strategy" で失敗する
-		FieldScope:     "fqdn",        // seed の完全一致ホストに限定（サブドメイン追わない）
-		OutOfScope:     engine.DangerousPathRegexes(),
-		FormExtraction: true, // フォームを抽出（送信はしない・standard は AutomaticFormFill 無効）
-		CustomHeaders:  headers,
+		URLs:              []string{scope.BaseURL()},
+		MaxDepth:          plan.MaxDepth,
+		Strategy:          "depth-first", // katana CLI 既定。空文字だと queue.New が "unsupported strategy" で失敗する
+		FieldScope:        "fqdn",        // seed の完全一致ホストに限定（サブドメイン追わない）
+		OutOfScope:        engine.DangerousPathRegexes(),
+		FormExtraction:    true,  // フォームを抽出（送信はしない）
+		AutomaticFormFill: false, // 明示的に無効化: フォーム送信を絶対にしない（GET-only 保証・上流既定が変わっても安全側）
+		CustomHeaders:     headers,
 		OnResult: func(r output.Result) {
 			if r.Request == nil {
 				return
@@ -83,6 +84,7 @@ func (c *Crawler) Crawl(ctx context.Context, scope engine.Scope, plan engine.Cra
 			mu.Lock()
 			defer mu.Unlock()
 			// 非 GET（フォームのアクション等）は診断対象 URL に入れず件数のみ集計する。
+			// HEAD は GET と同じく副作用が無く診断対象になり得るため GET 相当に扱う。
 			if method != "" && method != "GET" && method != "HEAD" {
 				forms++
 				return
@@ -94,11 +96,16 @@ func (c *Crawler) Crawl(ctx context.Context, scope engine.Scope, plan engine.Cra
 			if _, dup := seen[u]; dup {
 				return
 			}
+			// MaxURLs はハード上限: 到達後は append せず、未停止なら Close を仕掛ける。
+			// append 前に判定することで in-flight 結果による上限超過（オーバーシュート）を防ぐ。
+			if plan.MaxURLs > 0 && len(urls) >= plan.MaxURLs {
+				if !stopped.Load() {
+					go stop() // Close は OnResult ワーカ外の goroutine から
+				}
+				return
+			}
 			seen[u] = struct{}{}
 			urls = append(urls, u)
-			if plan.MaxURLs > 0 && len(urls) >= plan.MaxURLs {
-				go stop() // 上限到達で早期停止（Close は別 goroutine から）
-			}
 		},
 	}
 
