@@ -48,6 +48,162 @@ func TestTargetsOrBase(t *testing.T) {
 	})
 }
 
+func TestCrawlCollector_Offer(t *testing.T) {
+	scope, err := NewScope("http://localhost:3001")
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherScope, err := NewScope("http://example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("非 GET かつ in-scope は forms を加算し urls には入れない", func(t *testing.T) {
+		c := NewCrawlCollector(scope, 0)
+		capped := c.Offer("POST", "http://localhost:3001/login")
+		if capped {
+			t.Fatal("capped が true")
+		}
+		res := c.Result()
+		if res.FormCount != 1 {
+			t.Fatalf("FormCount = %d; want 1", res.FormCount)
+		}
+		if len(res.URLs) != 0 {
+			t.Fatalf("URLs = %v; want empty", res.URLs)
+		}
+	})
+
+	t.Run("非 GET かつ out-of-scope（別ホスト）は forms を加算しない", func(t *testing.T) {
+		c := NewCrawlCollector(scope, 0)
+		capped := c.Offer("POST", "http://evil.example.com/login")
+		if capped {
+			t.Fatal("capped が true")
+		}
+		res := c.Result()
+		if res.FormCount != 0 {
+			t.Fatalf("FormCount = %d; want 0", res.FormCount)
+		}
+	})
+
+	t.Run("非 GET かつ危険パス（out-of-scope）は forms を加算しない", func(t *testing.T) {
+		c := NewCrawlCollector(scope, 0)
+		capped := c.Offer("POST", "http://localhost:3001/logout")
+		if capped {
+			t.Fatal("capped が true")
+		}
+		res := c.Result()
+		if res.FormCount != 0 {
+			t.Fatalf("FormCount = %d; want 0", res.FormCount)
+		}
+	})
+
+	t.Run("GET out-of-scope は追加されない", func(t *testing.T) {
+		c := NewCrawlCollector(scope, 0)
+		capped := c.Offer("GET", "http://evil.example.com/")
+		if capped {
+			t.Fatal("capped が true")
+		}
+		res := c.Result()
+		if len(res.URLs) != 0 {
+			t.Fatalf("URLs = %v; want empty", res.URLs)
+		}
+	})
+
+	t.Run("GET 危険パス（out-of-scope）は追加されない", func(t *testing.T) {
+		c := NewCrawlCollector(scope, 0)
+		capped := c.Offer("GET", "http://localhost:3001/admin")
+		if capped {
+			t.Fatal("capped が true")
+		}
+		res := c.Result()
+		if len(res.URLs) != 0 {
+			t.Fatalf("URLs = %v; want empty", res.URLs)
+		}
+	})
+
+	t.Run("GET in-scope 新規は urls に追加される", func(t *testing.T) {
+		c := NewCrawlCollector(scope, 0)
+		c.Offer("GET", "http://localhost:3001/a")
+		res := c.Result()
+		if len(res.URLs) != 1 || res.URLs[0] != "http://localhost:3001/a" {
+			t.Fatalf("URLs = %v", res.URLs)
+		}
+	})
+
+	t.Run("GET 重複は 2 回目が追加されない", func(t *testing.T) {
+		c := NewCrawlCollector(scope, 0)
+		c.Offer("GET", "http://localhost:3001/a")
+		c.Offer("GET", "http://localhost:3001/a")
+		res := c.Result()
+		if len(res.URLs) != 1 {
+			t.Fatalf("URLs = %v; want 1 element (dedup)", res.URLs)
+		}
+	})
+
+	t.Run("HEAD は GET 相当に扱われ in-scope なら追加される", func(t *testing.T) {
+		c := NewCrawlCollector(scope, 0)
+		capped := c.Offer("HEAD", "http://localhost:3001/a")
+		if capped {
+			t.Fatal("capped が true")
+		}
+		res := c.Result()
+		if len(res.URLs) != 1 || res.URLs[0] != "http://localhost:3001/a" {
+			t.Fatalf("URLs = %v", res.URLs)
+		}
+	})
+
+	t.Run("method 小文字も正規化される", func(t *testing.T) {
+		c := NewCrawlCollector(scope, 0)
+		c.Offer("get", "http://localhost:3001/a")
+		res := c.Result()
+		if len(res.URLs) != 1 {
+			t.Fatalf("URLs = %v; want 1 element", res.URLs)
+		}
+	})
+
+	t.Run("maxURLs=2 で 3 件目は追加されず capped=true・URLs は 2 件のまま", func(t *testing.T) {
+		c := NewCrawlCollector(scope, 2)
+		if capped := c.Offer("GET", "http://localhost:3001/a"); capped {
+			t.Fatal("1 件目で capped になった")
+		}
+		if capped := c.Offer("GET", "http://localhost:3001/b"); !capped {
+			t.Fatal("ちょうど上限に達する 2 件目で capped=true を期待")
+		}
+		if capped := c.Offer("GET", "http://localhost:3001/c"); !capped {
+			t.Fatal("上限到達後の 3 件目で capped=true を期待")
+		}
+		res := c.Result()
+		if len(res.URLs) != 2 {
+			t.Fatalf("URLs = %v; want 2 elements (ハード上限)", res.URLs)
+		}
+	})
+
+	t.Run("maxURLs=0（無制限）は capped が常に false", func(t *testing.T) {
+		c := NewCrawlCollector(scope, 0)
+		for i := 0; i < 5; i++ {
+			if capped := c.Offer("GET", "http://localhost:3001/p"+string(rune('a'+i))); capped {
+				t.Fatalf("i=%d で capped=true", i)
+			}
+		}
+		res := c.Result()
+		if len(res.URLs) != 5 {
+			t.Fatalf("URLs = %v; want 5 elements", res.URLs)
+		}
+	})
+
+	t.Run("otherScope に対する Offer は Allows で弾かれる（別スコープの健全性確認）", func(t *testing.T) {
+		c := NewCrawlCollector(otherScope, 0)
+		capped := c.Offer("GET", "http://localhost:3001/a")
+		if capped {
+			t.Fatal("capped が true")
+		}
+		res := c.Result()
+		if len(res.URLs) != 0 {
+			t.Fatalf("URLs = %v; want empty", res.URLs)
+		}
+	})
+}
+
 func TestDangerousPathRegexes(t *testing.T) {
 	pats := DangerousPathRegexes()
 	if len(pats) == 0 {

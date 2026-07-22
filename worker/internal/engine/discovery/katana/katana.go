@@ -5,8 +5,9 @@
 // 検証は //go:build integration のテストで行う（coverage の unit 計測からは除外）。
 //
 // クロール段ガード（spec §3）: standard engine（GET-only・フォーム送信なし）、FieldScope=fqdn で
-// seed ホストに限定、危険パスを OutOfScope で辿らせない、OnResult で scope.Allows 後段チェック、
-// MaxURLs 到達／ctx キャンセルで crawler.Close() して停止する。
+// seed ホストに限定、危険パスを OutOfScope で辿らせない、受理判定（scope 後段チェック・dedup・
+// MaxURLs ハード上限・フォーム集計）は engine.CrawlCollector に委譲、MaxURLs 到達／ctx キャンセルで
+// crawler.Close() して停止する。
 //
 // 注（Katana v1.6.1・Task 6 の go doc で確認済み）: types.Options に Context フィールドは無い。
 // Crawl(rootURL) は blocking なので、goroutine で回して ctx.Done() / MaxURLs 到達時に Close() で止める。
@@ -21,7 +22,6 @@ package katana
 import (
 	"context"
 	"fmt"
-	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -48,9 +48,7 @@ func (c *Crawler) Version() string { return version }
 func (c *Crawler) Crawl(ctx context.Context, scope engine.Scope, plan engine.CrawlPlan, headers []string) (engine.CrawlResult, error) {
 	var (
 		mu        sync.Mutex
-		seen      = make(map[string]struct{})
-		urls      []string
-		forms     int
+		collector = engine.NewCrawlCollector(scope, plan.MaxURLs)
 		cr        *standard.Crawler
 		closeOnce sync.Once
 		stopped   atomic.Bool
@@ -79,33 +77,12 @@ func (c *Crawler) Crawl(ctx context.Context, scope engine.Scope, plan engine.Cra
 			if r.Request == nil {
 				return
 			}
-			method := strings.ToUpper(r.Request.Method)
-			u := r.Request.URL
 			mu.Lock()
-			defer mu.Unlock()
-			// 非 GET（フォームのアクション等）は診断対象 URL に入れず件数のみ集計する。
-			// HEAD は GET と同じく副作用が無く診断対象になり得るため GET 相当に扱う。
-			if method != "" && method != "GET" && method != "HEAD" {
-				forms++
-				return
+			capped := collector.Offer(r.Request.Method, r.Request.URL)
+			mu.Unlock()
+			if capped && !stopped.Load() {
+				go stop() // 上限到達で早期停止（Close は OnResult ワーカ外の goroutine から）
 			}
-			// host:port＋非危険パスの後段チェック（belt-and-suspenders）。
-			if !scope.Allows(u) {
-				return
-			}
-			if _, dup := seen[u]; dup {
-				return
-			}
-			// MaxURLs はハード上限: 到達後は append せず、未停止なら Close を仕掛ける。
-			// append 前に判定することで in-flight 結果による上限超過（オーバーシュート）を防ぐ。
-			if plan.MaxURLs > 0 && len(urls) >= plan.MaxURLs {
-				if !stopped.Load() {
-					go stop() // Close は OnResult ワーカ外の goroutine から
-				}
-				return
-			}
-			seen[u] = struct{}{}
-			urls = append(urls, u)
 		},
 	}
 
@@ -137,8 +114,9 @@ func (c *Crawler) Crawl(ctx context.Context, scope engine.Scope, plan engine.Cra
 	}
 
 	mu.Lock()
-	defer mu.Unlock()
-	return engine.CrawlResult{URLs: urls, FormCount: forms}, nil
+	res := collector.Result()
+	mu.Unlock()
+	return res, nil
 }
 
 // 静的アサーション: Crawler が engine.Crawler を満たすことを保証する。
