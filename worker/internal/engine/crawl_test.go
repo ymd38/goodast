@@ -26,3 +26,23 @@ func TestScanTimeout(t *testing.T) {
 		})
 	}
 }
+
+func TestTargetsOrBase(t *testing.T) {
+	scope, err := NewScope("https://example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Run("Targets 空なら base URL", func(t *testing.T) {
+		got := TargetsOrBase(ScanRequest{Scope: scope})
+		if len(got) != 1 || got[0] != "https://example.com" {
+			t.Fatalf("got %v; want [https://example.com]", got)
+		}
+	})
+	t.Run("Targets 非空ならそのまま", func(t *testing.T) {
+		in := []string{"https://example.com/a", "https://example.com/b"}
+		got := TargetsOrBase(ScanRequest{Scope: scope, Targets: in})
+		if len(got) != 2 || got[0] != in[0] || got[1] != in[1] {
+			t.Fatalf("got %v; want %v", got, in)
+		}
+	})
+}

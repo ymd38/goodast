@@ -10,6 +10,15 @@ type CrawlPlan struct {
 	MaxURLs  int
 }
 
+// TargetsOrBase は診断対象 URL を返す。クロールで発見した Targets があればそれを、
+// 無ければ Scope.BaseURL() 単一を返す（未クロール時の後方互換）。
+func TargetsOrBase(req ScanRequest) []string {
+	if len(req.Targets) > 0 {
+		return req.Targets
+	}
+	return []string{req.Scope.BaseURL()}
+}
+
 // 動的タイムアウトの係数（spec §6.1・実測でチューニング可能）。
 const (
 	scanTimeoutBase   = 2 * time.Minute  // 単一 URL でも確保する下駄

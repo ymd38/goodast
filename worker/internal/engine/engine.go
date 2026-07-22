@@ -26,6 +26,8 @@ type FindingCallback func(Finding)
 type ScanRequest struct {
 	// Scope はスキャン対象の許可境界（allowlist）。エンジンはこの外へ逸脱しない。
 	Scope Scope
+	// Targets はクロール段が発見した診断対象 URL 群。空なら Scope.BaseURL() 単一にフォールバック。
+	Targets []string
 	// Headers は全リクエストに付与する認証ヘッダ（"Name: Value" 形式）。
 	// 認証後スキャンで持ち込みセッションを注入する（ADR-0003）。未認証時は空。
 	Headers []string
