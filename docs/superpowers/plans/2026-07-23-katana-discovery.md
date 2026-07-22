@@ -581,7 +581,12 @@ git commit -m "chore(worker): Katana Go SDK を依存に追加する"
 //
 // クロール段ガード（spec §3）: standard engine（GET-only・フォーム送信なし）、FieldScope=fqdn で
 // seed ホストに限定、危険パスを OutOfScope で辿らせない、OnResult で scope.Allows 後段チェック、
-// MaxURLs 到達で context を cancel して停止する。
+// MaxURLs 到達／ctx キャンセルで crawler.Close() して停止する。
+//
+// 注（Katana v1.6.1・Task 6 の go doc で確認済み）: types.Options に Context フィールドは無い。
+// Crawl(rootURL) は blocking なので、goroutine で回して ctx.Done() / MaxURLs 到達時に Close() で止める。
+// standard.Crawler は Close() error を持つ。OnResultCallback は func(output.Result)。
+// output.Result.Request は *navigation.Request（Method string / URL string）。
 package katana
 
 import (
@@ -589,6 +594,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/projectdiscovery/katana/pkg/engine/standard"
 	"github.com/projectdiscovery/katana/pkg/output"
@@ -597,8 +603,8 @@ import (
 	"github.com/ymd38/goodast/worker/internal/engine"
 )
 
-// version は go.mod で固定している Katana SDK バージョン（ADR-0002・Task 6 の実値に合わせる）。
-const version = "katana/vX.Y.Z"
+// version は go.mod で固定している Katana SDK バージョン（ADR-0002）。
+const version = "katana/v1.6.1"
 
 // Crawler は engine.Crawler の Katana 実装。状態を持たず per-scan で使える。
 type Crawler struct{}
@@ -611,23 +617,33 @@ func (c *Crawler) Version() string { return version }
 
 // Crawl は scope 起点から GET 探索し、スコープ内の GET 到達 URL と抽出フォーム数を返す。
 func (c *Crawler) Crawl(ctx context.Context, scope engine.Scope, plan engine.CrawlPlan, headers []string) (engine.CrawlResult, error) {
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
 	var (
-		mu    sync.Mutex
-		seen  = make(map[string]struct{})
-		urls  []string
-		forms int
+		mu        sync.Mutex
+		seen      = make(map[string]struct{})
+		urls      []string
+		forms     int
+		cr        *standard.Crawler
+		closeOnce sync.Once
+		stopped   atomic.Bool
 	)
+	// stop は crawler を一度だけ Close し、停止フラグを立てる。MaxURLs 到達・ctx キャンセル・
+	// 正常終了のいずれからも安全に呼べる（Close は OnResult ワーカ外の goroutine から呼ぶ）。
+	stop := func() {
+		stopped.Store(true)
+		closeOnce.Do(func() {
+			if cr != nil {
+				_ = cr.Close()
+			}
+		})
+	}
 
 	opts := &types.Options{
+		URLs:           []string{scope.BaseURL()},
 		MaxDepth:       plan.MaxDepth,
 		FieldScope:     "fqdn", // seed の完全一致ホストに限定（サブドメイン追わない）
 		OutOfScope:     engine.DangerousPathRegexes(),
 		FormExtraction: true, // フォームを抽出（送信はしない・standard は AutomaticFormFill 無効）
 		CustomHeaders:  headers,
-		Context:        ctx,
 		OnResult: func(r output.Result) {
 			if r.Request == nil {
 				return
@@ -651,7 +667,7 @@ func (c *Crawler) Crawl(ctx context.Context, scope engine.Scope, plan engine.Cra
 			seen[u] = struct{}{}
 			urls = append(urls, u)
 			if plan.MaxURLs > 0 && len(urls) >= plan.MaxURLs {
-				cancel() // 上限到達で graceful 停止
+				go stop() // 上限到達で早期停止（Close は別 goroutine から）
 			}
 		},
 	}
@@ -662,18 +678,29 @@ func (c *Crawler) Crawl(ctx context.Context, scope engine.Scope, plan engine.Cra
 	}
 	defer crawlerOpts.Close()
 
-	cr, err := standard.New(crawlerOpts)
+	cr, err = standard.New(crawlerOpts)
 	if err != nil {
 		return engine.CrawlResult{}, fmt.Errorf("katana engine: %w", err)
 	}
+	defer stop() // 正常終了でも確実に Close（sync.Once で二重 Close を防ぐ）
 
-	if err := cr.Crawl(scope.BaseURL()); err != nil {
-		// MaxURLs 到達による自発 cancel は正常終了扱い。
-		if plan.MaxURLs > 0 && len(urls) >= plan.MaxURLs {
-			return engine.CrawlResult{URLs: urls, FormCount: forms}, nil
+	// Crawl は blocking。goroutine で回し、ctx キャンセル時は Close で止める。
+	done := make(chan error, 1)
+	go func() { done <- cr.Crawl(scope.BaseURL()) }()
+
+	select {
+	case <-ctx.Done():
+		stop()
+		<-done // クロール goroutine の終了を待つ
+	case cerr := <-done:
+		// 自発 Close（MaxURLs / ctx）由来のエラーは正常終了扱い。それ以外は失敗。
+		if cerr != nil && !stopped.Load() {
+			return engine.CrawlResult{}, fmt.Errorf("katana crawl: %w", cerr)
 		}
-		return engine.CrawlResult{}, fmt.Errorf("katana crawl: %w", err)
 	}
+
+	mu.Lock()
+	defer mu.Unlock()
 	return engine.CrawlResult{URLs: urls, FormCount: forms}, nil
 }
 
@@ -681,9 +708,12 @@ func (c *Crawler) Crawl(ctx context.Context, scope engine.Scope, plan engine.Cra
 var _ engine.Crawler = (*Crawler)(nil)
 ```
 
-> **実 SDK 確認点**（Task 6 Step 2 の `go doc` 出力に合わせる）: `output.Result` のフィールド名
-> （`Request` / `Request.Method` / `Request.URL`）、`standard.New` の戻り値に `Close()` があるか。
-> `Close()` があれば `cr` にも `defer cr.Close()` を足す。差異があればここを実名に直す。
+> **実 SDK 確認（Task 6 で確定済み・Katana v1.6.1）**: `types.Options` に **`Context` フィールドは無い**
+> （上記は Close ベースのキャンセルに修正済み）。`output.Result.Request` は `*navigation.Request`
+> （`Method string` / `URL string`）。`standard.New(*types.CrawlerOptions)` / `Crawler.Close() error`
+> / `Crawler.Crawl(rootURL string) error`。`OnResultCallback` は `func(output.Result)`。
+> `types.Options.URLs`/`OutOfScope`/`CustomHeaders` は `goflags.StringSlice`（`[]string` を代入可能）。
+> ビルドが通らないフィールドがあれば `go doc github.com/projectdiscovery/katana/pkg/types Options` を正とする。
 
 - [ ] **Step 2: ビルド確認**
 
