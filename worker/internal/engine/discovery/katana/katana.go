@@ -14,9 +14,10 @@
 // standard.Crawler は Close() error を持つ。OnResultCallback は func(output.Result)。
 // output.Result.Request は *navigation.Request（Method string / URL string）。
 //
-// 注2（integration 実走で判明）: types.Options.Strategy を明示しないと内部の
-// pkg/utils/queue.New が "unsupported strategy" で失敗する（ゼロ値の "" は未定義戦略）。
-// katana CLI の既定 "depth-first" を明示指定する。
+// 注2（integration 実走で判明・重要）: Options は必ず types.DefaultOptions をベースにする。
+// bare な Options（ゼロ値）だと BodyReadSize=0 でレスポンス body を 0 バイトしか読まず、
+// リンクが 1 件も抽出されず seed しか発見できない。Strategy="" も queue.New が拒否する。
+// DefaultOptions は BodyReadSize=4MB / Strategy=depth-first / Timeout / Retries 等を与える。
 package katana
 
 import (
@@ -64,29 +65,31 @@ func (c *Crawler) Crawl(ctx context.Context, scope engine.Scope, plan engine.Cra
 		})
 	}
 
-	opts := &types.Options{
-		URLs:              []string{scope.BaseURL()},
-		MaxDepth:          plan.MaxDepth,
-		Strategy:          "depth-first", // katana CLI 既定。空文字だと queue.New が "unsupported strategy" で失敗する
-		FieldScope:        "fqdn",        // seed の完全一致ホストに限定（サブドメイン追わない）
-		OutOfScope:        engine.DangerousPathRegexes(),
-		FormExtraction:    true,  // フォームを抽出（送信はしない）
-		AutomaticFormFill: false, // 明示的に無効化: フォーム送信を絶対にしない（GET-only 保証・上流既定が変わっても安全側）
-		CustomHeaders:     headers,
-		OnResult: func(r output.Result) {
-			if r.Request == nil {
-				return
-			}
-			mu.Lock()
-			capped := collector.Offer(r.Request.Method, r.Request.URL)
-			mu.Unlock()
-			if capped && !stopped.Load() {
-				go stop() // 上限到達で早期停止（Close は OnResult ワーカ外の goroutine から）
-			}
-		},
+	// Katana の健全なデフォルト（BodyReadSize=4MB・Timeout・Retries・Strategy=depth-first・
+	// Concurrency/Parallelism/RateLimit 等）をベースにし、探索に必要なフィールドだけ上書きする。
+	// bare な types.Options だと BodyReadSize=0 でレスポンス body を 0 バイトしか読まず、リンクが
+	// 1 件も抽出されない（standard/crawl.go の io.LimitReader(body, BodyReadSize)・v1.6.1 で確認）。
+	opts := types.DefaultOptions
+	opts.URLs = []string{scope.BaseURL()}
+	opts.MaxDepth = plan.MaxDepth
+	opts.FieldScope = "fqdn" // seed の完全一致ホストに限定（既定 rdn はサブドメインを許すため上書き）
+	opts.OutOfScope = engine.DangerousPathRegexes()
+	opts.FormExtraction = true     // フォームを抽出（送信はしない）
+	opts.AutomaticFormFill = false // 明示的に無効化: フォーム送信を絶対にしない（GET-only 保証・上流既定が変わっても安全側）
+	opts.CustomHeaders = headers
+	opts.OnResult = func(r output.Result) {
+		if r.Request == nil {
+			return
+		}
+		mu.Lock()
+		capped := collector.Offer(r.Request.Method, r.Request.URL)
+		mu.Unlock()
+		if capped && !stopped.Load() {
+			go stop() // 上限到達で早期停止（Close は OnResult ワーカ外の goroutine から）
+		}
 	}
 
-	crawlerOpts, err := types.NewCrawlerOptions(opts)
+	crawlerOpts, err := types.NewCrawlerOptions(&opts)
 	if err != nil {
 		return engine.CrawlResult{}, fmt.Errorf("katana options: %w", err)
 	}
