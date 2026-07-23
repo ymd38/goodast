@@ -1,7 +1,7 @@
 // API server module — Nuclei SDK は依存に含めない（ADR-0001 / ADR-0002）
 module github.com/ymd38/goodast/api
 
-go 1.26.4
+go 1.26.5
 
 require (
 	github.com/gin-gonic/gin v1.12.0

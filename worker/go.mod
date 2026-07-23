@@ -1,7 +1,7 @@
 // Scan worker module — Nuclei SDK はこのモジュールにのみ追加する（ADR-0001 / ADR-0002）
 module github.com/ymd38/goodast/worker
 
-go 1.26.4
+go 1.26.5
 
 require (
 	github.com/google/uuid v1.6.0
