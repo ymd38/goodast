@@ -26,11 +26,29 @@ type FindingCallback func(Finding)
 type ScanRequest struct {
 	// Scope はスキャン対象の許可境界（allowlist）。エンジンはこの外へ逸脱しない。
 	Scope Scope
+	// Targets はクロール段が発見した診断対象 URL 群。空なら Scope.BaseURL() 単一にフォールバック。
+	Targets []string
 	// Headers は全リクエストに付与する認証ヘッダ（"Name: Value" 形式）。
 	// 認証後スキャンで持ち込みセッションを注入する（ADR-0003）。未認証時は空。
 	Headers []string
 	// Profile は preset 由来の実行パラメータ（テンプレート選択・レート）。
 	Profile ScanProfile
+}
+
+// CrawlResult はクロール段の成果。URLs は GET 到達済み・スコープ内の対象（重複排除済み）。
+// FormCount は抽出した非 GET フォーム（アクション）の件数（今回は件数のみ・詳細永続化は次タスク）。
+type CrawlResult struct {
+	URLs      []string
+	FormCount int
+}
+
+// Crawler はクロールエンジンの抽象。実装は engine/discovery 配下に隔離する（Engine と同じ扱い）。
+// interface の主目的はテスト容易性（scanjob を実クロールなしで検証するため fake 差し替え可能にする）。
+type Crawler interface {
+	// Crawl は scope 起点から plan の上限内で GET 探索し、発見 URL とフォーム数を返す。
+	// headers は認証クロール用の "Name: Value"（ADR-0003・未認証時は空）。値はログしない。
+	Crawl(ctx context.Context, scope Scope, plan CrawlPlan, headers []string) (CrawlResult, error)
+	Version() string
 }
 
 // Engine はスキャンエンジンの抽象。

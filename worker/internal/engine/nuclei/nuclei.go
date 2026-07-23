@@ -89,7 +89,7 @@ func (e *Engine) Scan(ctx context.Context, req engine.ScanRequest, onFinding eng
 	}
 	defer ne.Close()
 
-	ne.LoadTargets([]string{req.Scope.BaseURL()}, false)
+	ne.LoadTargets(engine.TargetsOrBase(req), false)
 
 	// 検出コールバックは複数 goroutine から呼ばれ得るため mutex で直列化する。
 	var mu sync.Mutex

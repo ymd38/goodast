@@ -12,8 +12,16 @@ type SeverityCounts struct {
 	Total    int `json:"total"`
 }
 
+// DiscoveryInfo はクロール段の集計（発見 URL 数・抽出フォーム数）。詳細（エンドポイント一覧）の
+// 永続化は次タスク（discovered_endpoints テーブル）。
+type DiscoveryInfo struct {
+	URLCount  int `json:"url_count"`
+	FormCount int `json:"form_count"`
+}
+
 // ScanSummary は scans.summary_json に保存するエンベロープ。件数を "findings" キーの
 // 下にネストする。スコアは持たない（api 側 report が SeverityCounts から算出する）。
 type ScanSummary struct {
-	Findings SeverityCounts `json:"findings"`
+	Findings  SeverityCounts `json:"findings"`
+	Discovery *DiscoveryInfo `json:"discovery,omitempty"`
 }

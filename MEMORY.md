@@ -13,7 +13,7 @@
 **実装**: `api/go.mod`・`worker/go.mod`・ルート `go.work` を作成し、別モジュール境界を物理的に確立した。
 
 - module path: `github.com/ymd38/goodast/api` / `github.com/ymd38/goodast/worker`（リモート `ymd38/goodast` に一致）
-- go directive: `1.26.4`（ローカルは1.24.0だが `GOTOOLCHAIN=auto` で1.26.4を自動DLしビルド成功を確認）
+- go directive: `1.26.5`（最新 1.26.x へ更新・2026-07-23。ローカルは `/usr/local/go` の compile が壊れ 1.24.0 のため `env -u GOROOT go ...` で module-cache toolchain を使う）
 - `go.work` は `use ./api ./worker`（開発専用）
 - 検証: 両モジュールで `go build` / `go vet` パス、`go list -m all` で2モジュール認識を確認
 - 依存追加（Gin / river / Nuclei SDK）は未実施 — 各実装フェーズで個別に追加する。Nuclei SDK は `worker/go.mod` にのみ入れる

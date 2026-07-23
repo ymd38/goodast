@@ -118,9 +118,9 @@ lint: ## golangci-lint（api / worker・CI と同設定）
 	cd worker && golangci-lint run --timeout=5m
 
 .PHONY: cover
-cover: ## worker ユニットカバレッジ（除外: db / cmd / engine/nuclei / scanjob）
+cover: ## worker ユニットカバレッジ（除外: db / cmd / engine/nuclei / engine/discovery/katana / scanjob）
 	cd worker && go test -race -covermode=atomic -coverprofile=coverage.out \
-		$$(go list ./... | grep -v '/db$$\|/cmd/\|/engine/nuclei$$\|/scanjob$$') \
+		$$(go list ./... | grep -v '/db$$\|/cmd/\|/engine/nuclei$$\|/engine/discovery/katana$$\|/scanjob$$') \
 		&& go tool cover -func=coverage.out | grep -E "^total"
 
 # ---- 検証環境（OWASP Juice Shop / 検知精度の検証）----
@@ -162,3 +162,7 @@ nuclei-parity: ## 検知精度 検証: Nuclei CLI ベースライン vs goodast 
 nuclei-auth: ## 認証後スキャン検証（§10-3）: ヘッダ注入の到達（決定的）+ 認証カバレッジ縮小なし（要 make juiceshop-up）
 	cd worker && NUCLEI_TEST_TARGET="$(NUCLEI_TEST_TARGET)" NUCLEI_TEST_TAGS="$(NUCLEI_TEST_TAGS)" NUCLEI_TEMPLATES_DIR="$(NUCLEI_TEMPLATES_DIR)" \
 		go test -tags=integration -v -timeout 30m -run 'TestNucleiHeaderInjection|TestNucleiAuthenticatedCoverage' ./internal/engine/nuclei/
+
+.PHONY: discovery-scan
+discovery-scan: ## Katana 探索の integration テスト（hermetic・httptest 使用。外部依存なし）
+	cd worker && go test -tags=integration -race -v -timeout 8m -run TestKatanaCrawl ./internal/engine/discovery/katana/

@@ -345,7 +345,8 @@ goodast/
 
 ## 11. 段階計画（PoC後）
 
-- **フェーズ2**: **BYOK AI連携**（レポート平易化・設定ウィザード・AIトリアージ）／ZAP連携（Dockerサイドカー + REST API）でクロール・アクティブスキャン強化／フォーム認証自動化／二層レポート（経営層・開発者）／report-to-issues連携でGitHub Issue化。
+- **フェーズ2**: **BYOK AI連携**（レポート平易化・設定ウィザード・AIトリアージ）／クロール・アクティブスキャン強化／フォーム認証自動化／二層レポート（経営層・開発者）／report-to-issues連携でGitHub Issue化。
+  - **探索（クロール）強化の方式決定（2026-07-23）**: ZAP連携ではなく **Katana Go SDK** を独立 `Crawler`（`worker/internal/engine/discovery/katana`）として採用。ZAPは未確定オプションのまま据え置き。**探索コア（発見GET到達URL群をNuclei診断に拡張・二段配線・`ScanSummary.Discovery`）は実装完了**（`docs/superpowers/specs/2026-07-23-katana-discovery-design.md`）。フォームファジングと `discovered_endpoints` テーブル＋発見エンドポイント一覧APIは次イテレーション。
 - **フェーズ3**: AI探索高度化（タスク駆動クロールで多段ワークフロー・深い状態へ到達）／登録セキスペ紹介導線の事業化。
 
 ---

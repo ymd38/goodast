@@ -1,7 +1,7 @@
 # Backend Rules — Go + Gin + river + pgx
 
 ## スタック
-Go 1.26.4 / Gin / sqlc + pgx v5 / golang-migrate / river（ジョブキュー）/ testify / slog（構造化ログ）/ go.uber.org/dig（DI）
+Go 1.26.5 / Gin / sqlc + pgx v5 / golang-migrate / river（ジョブキュー）/ testify / slog（構造化ログ）/ go.uber.org/dig（DI）
 
 > **生SQLを直接Goコードに書かない。** `queries/*.sql` に SQLを書き、sqlcで型安全なGoコードを生成する。
 

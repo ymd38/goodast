@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -38,14 +39,43 @@ func testCipher(t *testing.T) *secrets.Cipher {
 }
 
 // newTestWorker は WorkerDeps を組んで Worker を生成する（NewWorker の positional 廃止に対応）。
+// Crawler は未指定（nil）。既存テストは全て light preset（Crawl.Enabled=false）を使うため、
+// crawler が呼ばれることはない。
 func newTestWorker(pool *pgxpool.Pool, eng engine.Engine, cipher *secrets.Cipher, logger *slog.Logger) *scanjob.Worker {
 	return scanjob.NewWorker(scanjob.WorkerDeps{Queries: db.New(pool), Engine: eng, Cipher: cipher, Logger: logger})
 }
 
-// capturingEngine は Scan に渡された ScanRequest.Headers を記録する engine.Engine 実装。
+// newTestWorkerWithCrawler は crawler を明示注入した Worker を生成する
+// （standard/deep preset の二段配線を検証するテスト用）。
+func newTestWorkerWithCrawler(pool *pgxpool.Pool, eng engine.Engine, crawler engine.Crawler, cipher *secrets.Cipher, logger *slog.Logger) *scanjob.Worker {
+	return scanjob.NewWorker(scanjob.WorkerDeps{Queries: db.New(pool), Engine: eng, Crawler: crawler, Cipher: cipher, Logger: logger})
+}
+
+// fakeCrawler は二段配線検証用の決定的クローラ（実クロール不要）。
+type fakeCrawler struct {
+	res engine.CrawlResult
+	err error
+}
+
+func (f fakeCrawler) Crawl(_ context.Context, _ engine.Scope, _ engine.CrawlPlan, _ []string) (engine.CrawlResult, error) {
+	return f.res, f.err
+}
+func (f fakeCrawler) Version() string { return "fake/v0" }
+
+// panicCrawler は呼ばれてはならない箇所（plan.Crawl.Enabled=false）に注入し、
+// 呼び出しがあれば即座に検出する（フォールバック挙動と非呼び出しを区別するため）。
+type panicCrawler struct{}
+
+func (panicCrawler) Crawl(context.Context, engine.Scope, engine.CrawlPlan, []string) (engine.CrawlResult, error) {
+	panic("crawler must not be called when plan.Crawl.Enabled=false")
+}
+func (panicCrawler) Version() string { return "panic/v0" }
+
+// capturingEngine は Scan に渡された ScanRequest.Headers/Targets を記録する engine.Engine 実装。
 type capturingEngine struct {
 	mu      sync.Mutex
 	headers []string
+	targets []string
 }
 
 func (*capturingEngine) Version() string { return "capture/v0" }
@@ -54,6 +84,7 @@ func (e *capturingEngine) Scan(_ context.Context, req engine.ScanRequest, _ engi
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.headers = append([]string(nil), req.Headers...)
+	e.targets = append([]string(nil), req.Targets...)
 	return nil
 }
 
@@ -61,6 +92,12 @@ func (e *capturingEngine) captured() []string {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	return e.headers
+}
+
+func (e *capturingEngine) capturedTargets() []string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.targets
 }
 
 // fakeEngine は engine.Engine のテスト用実装。SDK を呼ばずに固定 findings を返す。
@@ -503,5 +540,146 @@ func TestScanWorkerCredentialDecryptFailureMarksFailed(t *testing.T) {
 
 	if count := countFindings(t, pool, scanID); count != 0 {
 		t.Errorf("findings after decrypt-failure = %d, want 0 (stale cleared)", count)
+	}
+}
+
+// getSummary は scan の summary_json を読み jobs.ScanSummary にデコードする。
+func getSummary(t *testing.T, pool *pgxpool.Pool, scanID string) jobs.ScanSummary {
+	t.Helper()
+	var raw []byte
+	if err := pool.QueryRow(context.Background(),
+		`SELECT summary_json FROM scans WHERE id = $1::uuid`, scanID).Scan(&raw); err != nil {
+		t.Fatalf("read summary: %v", err)
+	}
+	var sum jobs.ScanSummary
+	if err := json.Unmarshal(raw, &sum); err != nil {
+		t.Fatalf("unmarshal summary: %v", err)
+	}
+	return sum
+}
+
+// TestWorkerTwoPhaseDiscovery は crawl（standard preset・有効）→ 動的タイムアウト → scan の
+// 二段配線を検証する。fake crawler が返す発見 URL 群が診断対象（engine.ScanRequest.Targets）に
+// 供給され、summary.Discovery に集計が載ることを確認する（実クロール不要）。
+func TestWorkerTwoPhaseDiscovery(t *testing.T) {
+	dbURL := os.Getenv("TEST_DATABASE_URL")
+	if dbURL == "" {
+		t.Skip("TEST_DATABASE_URL not set; skipping integration test")
+	}
+	ctx := context.Background()
+
+	pool, err := pgxpool.New(ctx, dbURL)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer pool.Close()
+
+	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
+	fake := fakeCrawler{res: engine.CrawlResult{
+		URLs:      []string{"http://localhost:3001/", "http://localhost:3001/products"},
+		FormCount: 2,
+	}}
+	capEng := &capturingEngine{}
+
+	workers := river.NewWorkers()
+	river.AddWorker(workers, newTestWorkerWithCrawler(pool, capEng, fake, testCipher(t), quiet))
+	client, err := river.NewClient(riverpgxv5.New(pool), &river.Config{
+		Queues:  map[string]river.QueueConfig{river.QueueDefault: {MaxWorkers: 1}},
+		Workers: workers,
+		Logger:  quiet,
+	})
+	if err != nil {
+		t.Fatalf("client: %v", err)
+	}
+	insertOnly, err := river.NewClient(riverpgxv5.New(pool), &river.Config{Logger: quiet})
+	if err != nil {
+		t.Fatalf("insert-only client: %v", err)
+	}
+	if err := client.Start(ctx); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	defer func() { _ = client.Stop(ctx) }()
+
+	// localhost で所有確認をスキップ。standard preset は Crawl.Enabled=true。
+	siteID := seedSite(t, pool, "http://localhost:3001", false)
+	scanID := seedScan(t, pool, siteID, "queued")
+	if _, err := insertOnly.Insert(ctx, jobs.ScanArgs{ScanID: scanID, Preset: jobs.PresetStandard}, nil); err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+	waitForStatus(t, pool, scanID, "done")
+
+	sum := getSummary(t, pool, scanID)
+	if sum.Discovery == nil || sum.Discovery.URLCount != 2 || sum.Discovery.FormCount != 2 {
+		t.Fatalf("Discovery = %+v; want url=2 form=2", sum.Discovery)
+	}
+
+	gotTargets := capEng.capturedTargets()
+	wantTargets := []string{"http://localhost:3001/", "http://localhost:3001/products"}
+	if len(gotTargets) != len(wantTargets) {
+		t.Fatalf("targets = %v, want %v", gotTargets, wantTargets)
+	}
+	for i := range wantTargets {
+		if gotTargets[i] != wantTargets[i] {
+			t.Errorf("target[%d] = %q, want %q", i, gotTargets[i], wantTargets[i])
+		}
+	}
+}
+
+// TestWorkerCrawlDisabledFallsBackToSingleURL は light preset（Crawl.Enabled=false）で
+// crawler が一切呼ばれず、診断対象が scope の単一 URL にフォールバックし、
+// summary.Discovery が nil のままであることを検証する。
+func TestWorkerCrawlDisabledFallsBackToSingleURL(t *testing.T) {
+	dbURL := os.Getenv("TEST_DATABASE_URL")
+	if dbURL == "" {
+		t.Skip("TEST_DATABASE_URL not set; skipping integration test")
+	}
+	ctx := context.Background()
+
+	pool, err := pgxpool.New(ctx, dbURL)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer pool.Close()
+
+	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
+	// crawl 無効時は呼ばれてはならないため、呼ばれたら panic する crawler を仕込む
+	// （呼ばれた場合は Work がエラー/パニックで返り waitForStatus が done に到達せず検出できる）。
+	capEng := &capturingEngine{}
+
+	workers := river.NewWorkers()
+	river.AddWorker(workers, newTestWorkerWithCrawler(pool, capEng, panicCrawler{}, testCipher(t), quiet))
+	client, err := river.NewClient(riverpgxv5.New(pool), &river.Config{
+		Queues:  map[string]river.QueueConfig{river.QueueDefault: {MaxWorkers: 1}},
+		Workers: workers,
+		Logger:  quiet,
+	})
+	if err != nil {
+		t.Fatalf("client: %v", err)
+	}
+	insertOnly, err := river.NewClient(riverpgxv5.New(pool), &river.Config{Logger: quiet})
+	if err != nil {
+		t.Fatalf("insert-only client: %v", err)
+	}
+	if err := client.Start(ctx); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	defer func() { _ = client.Stop(ctx) }()
+
+	siteID := seedSite(t, pool, "http://localhost:3002", false)
+	scanID := seedScan(t, pool, siteID, "queued")
+	if _, err := insertOnly.Insert(ctx, jobs.ScanArgs{ScanID: scanID, Preset: jobs.PresetLight}, nil); err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+	waitForStatus(t, pool, scanID, "done")
+
+	sum := getSummary(t, pool, scanID)
+	if sum.Discovery != nil {
+		t.Fatalf("Discovery = %+v; want nil (crawl disabled)", sum.Discovery)
+	}
+
+	gotTargets := capEng.capturedTargets()
+	wantTargets := []string{"http://localhost:3002"}
+	if len(gotTargets) != len(wantTargets) || (len(gotTargets) > 0 && gotTargets[0] != wantTargets[0]) {
+		t.Fatalf("targets = %v, want %v (single-URL fallback)", gotTargets, wantTargets)
 	}
 }

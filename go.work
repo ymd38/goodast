@@ -1,7 +1,7 @@
 // 開発専用: api / worker / jobs モジュールを束ねる（ADR-0001）。
 // 本番ビルドは各モジュール単位で行い、Nuclei SDK 依存を worker に隔離する。
 // jobs は api↔worker のジョブ契約（依存ゼロ）。
-go 1.26.4
+go 1.26.5
 
 use (
 	./api

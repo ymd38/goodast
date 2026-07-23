@@ -1,0 +1,126 @@
+// Package katana は engine.Crawler の Katana v1.6.1 SDK 実装。
+//
+// ADR-0002 に準じ Katana SDK の import はこのパッケージにのみ許可する。SDK 呼び出しは
+// ネットワーク＋クロール対象を要しユニットテストできないため、本パッケージは薄いグルーに留め、
+// 検証は //go:build integration のテストで行う（coverage の unit 計測からは除外）。
+//
+// クロール段ガード（spec §3）: standard engine（GET-only・フォーム送信なし）、FieldScope=fqdn で
+// seed ホストに限定、危険パスを OutOfScope で辿らせない、受理判定（scope 後段チェック・dedup・
+// MaxURLs ハード上限・フォーム集計）は engine.CrawlCollector に委譲、MaxURLs 到達／ctx キャンセルで
+// crawler.Close() して停止する。
+//
+// 注（Katana v1.6.1・Task 6 の go doc で確認済み）: types.Options に Context フィールドは無い。
+// Crawl(rootURL) は blocking なので、goroutine で回して ctx.Done() / MaxURLs 到達時に Close() で止める。
+// standard.Crawler は Close() error を持つ。OnResultCallback は func(output.Result)。
+// output.Result.Request は *navigation.Request（Method string / URL string）。
+//
+// 注2（integration 実走で判明・重要）: Options は必ず types.DefaultOptions をベースにする。
+// bare な Options（ゼロ値）だと BodyReadSize=0 でレスポンス body を 0 バイトしか読まず、
+// リンクが 1 件も抽出されず seed しか発見できない。Strategy="" も queue.New が拒否する。
+// DefaultOptions は BodyReadSize=4MB / Strategy=depth-first / Timeout / Retries 等を与える。
+package katana
+
+import (
+	"context"
+	"fmt"
+	"sync"
+	"sync/atomic"
+
+	"github.com/projectdiscovery/katana/pkg/engine/standard"
+	"github.com/projectdiscovery/katana/pkg/output"
+	"github.com/projectdiscovery/katana/pkg/types"
+
+	"github.com/ymd38/goodast/worker/internal/engine"
+)
+
+// version は go.mod で固定している Katana SDK バージョン（ADR-0002）。
+const version = "katana/v1.6.1"
+
+// Crawler は engine.Crawler の Katana 実装。状態を持たず per-scan で使える。
+type Crawler struct{}
+
+// New は Katana クローラを生成する。
+func New() *Crawler { return &Crawler{} }
+
+// Version は固定された Katana SDK バージョン識別子を返す。
+func (c *Crawler) Version() string { return version }
+
+// Crawl は scope 起点から GET 探索し、スコープ内の GET 到達 URL と抽出フォーム数を返す。
+func (c *Crawler) Crawl(ctx context.Context, scope engine.Scope, plan engine.CrawlPlan, headers []string) (engine.CrawlResult, error) {
+	var (
+		mu        sync.Mutex
+		collector = engine.NewCrawlCollector(scope, plan.MaxURLs)
+		cr        *standard.Crawler
+		closeOnce sync.Once
+		stopped   atomic.Bool
+	)
+	// stop は crawler を一度だけ Close し、停止フラグを立てる。MaxURLs 到達・ctx キャンセル・
+	// 正常終了のいずれからも安全に呼べる（Close は OnResult ワーカ外の goroutine から呼ぶ）。
+	stop := func() {
+		stopped.Store(true)
+		closeOnce.Do(func() {
+			if cr != nil {
+				_ = cr.Close()
+			}
+		})
+	}
+
+	// Katana の健全なデフォルト（BodyReadSize=4MB・Timeout・Retries・Strategy=depth-first・
+	// Concurrency/Parallelism/RateLimit 等）をベースにし、探索に必要なフィールドだけ上書きする。
+	// bare な types.Options だと BodyReadSize=0 でレスポンス body を 0 バイトしか読まず、リンクが
+	// 1 件も抽出されない（standard/crawl.go の io.LimitReader(body, BodyReadSize)・v1.6.1 で確認）。
+	opts := types.DefaultOptions
+	opts.URLs = []string{scope.BaseURL()}
+	opts.MaxDepth = plan.MaxDepth
+	opts.FieldScope = "fqdn" // seed の完全一致ホストに限定（既定 rdn はサブドメインを許すため上書き）
+	opts.OutOfScope = engine.DangerousPathRegexes()
+	opts.FormExtraction = true     // フォームを抽出（送信はしない）
+	opts.AutomaticFormFill = false // 明示的に無効化: フォーム送信を絶対にしない（GET-only 保証・上流既定が変わっても安全側）
+	opts.CustomHeaders = headers
+	opts.OnResult = func(r output.Result) {
+		if r.Request == nil {
+			return
+		}
+		mu.Lock()
+		capped := collector.Offer(r.Request.Method, r.Request.URL)
+		mu.Unlock()
+		if capped && !stopped.Load() {
+			go stop() // 上限到達で早期停止（Close は OnResult ワーカ外の goroutine から）
+		}
+	}
+
+	crawlerOpts, err := types.NewCrawlerOptions(&opts)
+	if err != nil {
+		return engine.CrawlResult{}, fmt.Errorf("katana options: %w", err)
+	}
+	defer func() { _ = crawlerOpts.Close() }()
+
+	cr, err = standard.New(crawlerOpts)
+	if err != nil {
+		return engine.CrawlResult{}, fmt.Errorf("katana engine: %w", err)
+	}
+	defer stop() // 正常終了でも確実に Close（sync.Once で二重 Close を防ぐ）
+
+	// Crawl は blocking。goroutine で回し、ctx キャンセル時は Close で止める。
+	done := make(chan error, 1)
+	go func() { done <- cr.Crawl(scope.BaseURL()) }()
+
+	select {
+	case <-ctx.Done():
+		stop()
+		<-done // クロール goroutine の終了を待つ
+	case cerr := <-done:
+		// 自発 Close（MaxURLs / ctx）由来のエラーは正常終了扱い。それ以外は失敗。
+		if cerr != nil && !stopped.Load() {
+			return engine.CrawlResult{}, fmt.Errorf("katana crawl: %w", cerr)
+		}
+	}
+
+	mu.Lock()
+	res := collector.Result()
+	mu.Unlock()
+	return res, nil
+}
+
+// 静的アサーション: Crawler が engine.Crawler を満たすことを保証する。
+var _ engine.Crawler = (*Crawler)(nil)
