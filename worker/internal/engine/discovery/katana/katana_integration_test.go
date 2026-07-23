@@ -30,11 +30,16 @@ func linkedSite(t *testing.T) *httptest.Server {
 	}
 	mux := http.NewServeMux()
 	// 127.0.0.1:9 は別 authority（スコープ外・ポート違い）。/account/logout は危険パス。
-	mux.HandleFunc("/", page("/products", "/about", "/account/logout", "http://127.0.0.1:9/evil"))
+	// /style.css は静的アセット（in-scope だが診断対象に入れてはならない）。
+	mux.HandleFunc("/", page("/products", "/about", "/account/logout", "/style.css", "http://127.0.0.1:9/evil"))
 	mux.HandleFunc("/products", page("/products/1"))
 	mux.HandleFunc("/products/1", page())
 	mux.HandleFunc("/about", page())
 	mux.HandleFunc("/account/logout", page()) // クロールされてはならない
+	mux.HandleFunc("/style.css", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/css")
+		_, _ = w.Write([]byte("body{}"))
+	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return srv
@@ -79,6 +84,10 @@ func TestKatanaCrawlFollowsLinks(t *testing.T) {
 	// 2. スコープ外ホスト（別ポート）へ出ていない = post-check の host:port 強制。
 	if got["http://127.0.0.1:9/evil"] {
 		t.Error("スコープ外 authority が混入した")
+	}
+	// 3. 静的アセット（.css）は in-scope でも診断対象に入れない。
+	if got[srv.URL+"/style.css"] {
+		t.Error("静的アセット /style.css が診断対象に混入した")
 	}
 	if len(res.URLs) < 4 {
 		t.Fatalf("探索が拡張していない（len=%d・BodyReadSize 回帰の疑い）", len(res.URLs))

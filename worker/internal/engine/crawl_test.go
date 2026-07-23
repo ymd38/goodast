@@ -202,6 +202,51 @@ func TestCrawlCollector_Offer(t *testing.T) {
 			t.Fatalf("URLs = %v; want empty", res.URLs)
 		}
 	})
+
+	t.Run("in-scope でも静的アセットは診断対象に入れない", func(t *testing.T) {
+		c := NewCrawlCollector(scope, 0)
+		for _, u := range []string{
+			"http://localhost:3001/app.css",
+			"http://localhost:3001/main.js",
+			"http://localhost:3001/logo.png",
+			"http://localhost:3001/font.woff2",
+			"http://localhost:3001/_nuxt/x.js?vue&type=style",
+		} {
+			if capped := c.Offer("GET", u); capped {
+				t.Fatalf("%s で capped", u)
+			}
+		}
+		// 通常ページは追加される。
+		c.Offer("GET", "http://localhost:3001/products")
+		res := c.Result()
+		if len(res.URLs) != 1 || res.URLs[0] != "http://localhost:3001/products" {
+			t.Fatalf("URLs = %v; want [.../products] のみ（静的アセットは除外）", res.URLs)
+		}
+	})
+}
+
+func TestIsStaticAsset(t *testing.T) {
+	tests := []struct {
+		url  string
+		want bool
+	}{
+		{"http://x/app.css", true},
+		{"http://x/a/main.JS", true}, // 大文字も正規化
+		{"http://x/logo.png", true},
+		{"http://x/font.woff2", true},
+		{"http://x/doc.pdf", true},
+		{"http://x/style.css?v=2", true}, // クエリは無視
+		{"http://x/page", false},
+		{"http://x/", false},
+		{"http://x/index.html", false},    // ページは対象
+		{"http://x/api/data.json", false}, // JSON は攻撃面になり得るので除外しない
+		{"http://%zz/a.css", false},       // 解析不能 URL は除外しない
+	}
+	for _, tt := range tests {
+		if got := isStaticAsset(tt.url); got != tt.want {
+			t.Errorf("isStaticAsset(%q) = %v; want %v", tt.url, got, tt.want)
+		}
+	}
 }
 
 func TestDangerousPathRegexes(t *testing.T) {

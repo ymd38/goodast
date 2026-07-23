@@ -1,9 +1,32 @@
 package engine
 
 import (
+	"net/url"
+	"path"
 	"strings"
 	"time"
 )
+
+// staticAssetExtensions は診断対象外とする静的アセットの拡張子（小文字・ドット付き）。
+// CSS/JS/画像/フォント/メディア等は攻撃面でなく、Nuclei でスキャンしても無駄＋ノイズ源になる。
+// .json は API レスポンス（攻撃面）になり得るため除外しない。
+var staticAssetExtensions = map[string]struct{}{
+	".css": {}, ".js": {}, ".mjs": {}, ".map": {},
+	".png": {}, ".jpg": {}, ".jpeg": {}, ".gif": {}, ".svg": {}, ".webp": {}, ".ico": {}, ".bmp": {},
+	".woff": {}, ".woff2": {}, ".ttf": {}, ".otf": {}, ".eot": {},
+	".pdf": {}, ".mp4": {}, ".webm": {}, ".mp3": {}, ".zip": {},
+}
+
+// isStaticAsset は URL パスの拡張子が静的アセット（診断対象外）かを判定する。
+// クエリは無視し、パス末尾の拡張子のみを見る。解析不能な URL は false（除外しない）。
+func isStaticAsset(rawURL string) bool {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	_, ok := staticAssetExtensions[strings.ToLower(path.Ext(u.Path))]
+	return ok
+}
 
 // CrawlPlan はクロール段の有界化パラメータ。preset から導出される。
 // Enabled=false のとき crawler は呼ばれず、診断は単一 URL のまま（現状維持）。
@@ -57,8 +80,9 @@ func NewCrawlCollector(scope Scope, maxURLs int) *CrawlCollector {
 
 // Offer はクロール結果 1 件（method・rawURL）を受理判定する。
 //   - 非 GET/HEAD（フォームのアクション等）: 診断対象 URL に入れず、スコープ内なら forms を加算。
-//   - GET/HEAD: スコープ内・非重複なら診断対象 URL に追加（maxURLs 到達後は追加しない=ハード上限）。
+//   - GET/HEAD: スコープ内・非静的アセット・非重複なら診断対象 URL に追加（maxURLs 到達後は追加しない=ハード上限）。
 //
+// 静的アセット（css/js/画像/フォント等）はスコープ内でも診断対象にしない（攻撃面でないため）。
 // 戻り値 capped は「上限に達しておりクロールを停止してよい」を表す。
 func (c *CrawlCollector) Offer(method, rawURL string) (capped bool) {
 	m := strings.ToUpper(method)
@@ -70,6 +94,9 @@ func (c *CrawlCollector) Offer(method, rawURL string) (capped bool) {
 	}
 	if !c.scope.Allows(rawURL) {
 		return false
+	}
+	if isStaticAsset(rawURL) {
+		return false // 静的アセット（css/js/画像/フォント等）は診断対象にしない
 	}
 	if _, dup := c.seen[rawURL]; dup {
 		return false
